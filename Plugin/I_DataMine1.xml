@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation>
+	<settings>
+		<protocol>crlf</protocol>
+		<handleChildren>1</handleChildren>
+	</settings>
+	<files>L_DataMine1.lua</files>
+	<startup>initialise</startup>
+
+    <actionList>
+
+	</actionList>
+
+</implementation>

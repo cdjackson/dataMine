@@ -1,0 +1,116 @@
+{
+    "flashicon":"icons\/Data_Mine.swf",
+    "imgIconBody":"",
+    "imgIconDimmable":"",
+    "imgIconTurnable":"",
+    "imgIconMin":"",
+    "imgIconMax":"",
+    "halloIconsDir":"pics\/hallo",
+    "inScene": "0",
+    "DisplayStatus":{},
+    "doc_url":{
+        "doc_language":1,
+        "doc_manual":1,
+        "doc_version":1,
+        "doc_platform":0,
+        "doc_page":"devices"
+    },
+    "Tabs":[
+
+	{
+		"Label": {
+			"lang_tag": "dataMine",
+			"text": "dataMine"
+		},
+		"Position": "0",
+		"TabType": "flash",
+		"SceneGroup":[
+			{
+				"id": "1",
+				"top": "1",
+				"left": "0",
+				"x": "2",
+				"y": "2"
+			}
+		],
+		"ControlGroup": [
+			{
+				"id": "1",
+				"scenegroup": "1"
+			}
+		],
+		"Control": [
+			{
+				"ControlGroup": "1",
+				"ControlType": "label",
+				"Label": {
+					"lang_tag": "chtot",
+					"text": "Channels"
+				},
+				"top": "0",
+				"Display": {
+					"Top": 20,
+					"Left": 50,
+					"Width": 120,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "1",
+				"ControlType": "variable",
+				"top": "0",
+				"left": "1",
+				"Display": {
+					"Service": "urn:cd-jackson-com:serviceId:DataMine1",
+					"Variable": "ChannelCnt",
+					"Top": 20,
+					"Left": 175,
+					"Width": 75,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "label",
+				"Label": {
+					"lang_tag": "chrec",
+					"text": "<a href='/dm/index.html' target='_blank'>dataMine graphing page</a>"
+				},
+				"top": "1",
+				"Display": {
+					"Top": 100,
+					"Left": 50,
+					"Width": 120,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "label",
+				"Label": {
+					"lang_tag": "chrec",
+					"text": "<a href='/port_3480/data_request?id=lr_dmCtrl&control=debug' target='_blank'>dataMine debug page</a>"
+				},
+				"top": "2",
+				"Display": {
+					"Top": 130,
+					"Left": 50,
+					"Width": 120,
+					"Height": 20
+				}
+			}
+		]
+	},
+        {
+            "Label":{
+                "lang_tag":"advanced",
+                "text":"Advanced"
+            },
+            "Position":"1",
+            "TabType":"javascript",
+            "ScriptName":"shared.js",
+            "Function":"advanced_device"
+        }
+    ],
+    "DeviceType":"urn:schemas-cd-jackson-com:device:DataMine:1"
+}

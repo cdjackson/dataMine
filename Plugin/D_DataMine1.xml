@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+	<specVersion>
+		<major>1</major>
+		<minor>0</minor>
+	</specVersion>
+	<device>
+		<deviceType>urn:schemas-cd-jackson-com:device:DataMine:1</deviceType>
+		<staticJson>D_DataMine1.json</staticJson>
+		<serviceList>
+			<service>
+				<serviceType>urn:schemas-cd-jackson-com:service:DataMine:1</serviceType>
+				<serviceId>urn:cd-jackson-com:serviceId:DataMine1</serviceId>
+				<SCPDURL>S_DataMine1.xml</SCPDURL>
+			</service>
+		</serviceList>
+		<implementationList>
+			<implementationFile>I_DataMine1.xml</implementationFile>
+		</implementationList>
+	</device>
+</root>
+
