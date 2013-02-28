@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.966"
+local dmLuaVersion = "0.967"
 
 local mountLocal = ""
 
@@ -456,6 +456,17 @@ function initialise(lul_device)
 						v.DataOffset = 0
 					end
 
+					if(v.Alpha == 1) then
+						if(type(v.Lookup) ~= "table") then
+	--						luup.log(DATAMINE_LOG_NAME..v.Name.." is not table")
+							v.Alpha = 0
+						end
+					end
+
+					if(v.Alpha == 0 or v.Alpha == nil) then
+						v.Lookup = nil
+					end
+
 					local LastValue = luup.variable_get(v.Service, v.Variable, v.Device)
 					if(LastValue == nil) then
 						v.Ghost = true
@@ -491,6 +502,7 @@ function initialise(lul_device)
 							v.LastHistory = FIRST_YEAR
 						end
 					end
+
 
 					-- ***************************************************************************
 					-- ***************************************************************************
@@ -978,36 +990,24 @@ function controlSaveGraph(lul_parameters)
 	newTable.Period   = 0
 	newTable.Channels = {}
 
+	local chName
+    local chCnt
+    local outCnt
 
-	if(lul_parameters.channel1 ~= nul) then
-		if(tonumber(lul_parameters.channel1) ~= 0) then
-			ChannelList[1] = {}
-			ChannelList[1].chan = tonumber(lul_parameters.channel1)
-			ChannelList[1].axis = tonumber(lul_parameters.axis1)
+    outCnt = 0
+	chCnt = 0
+    repeat
+        chName = "channel"..chCnt
+		if(lul_parameters[chName] ~= nul) then
+			if(tonumber(lul_parameters[chName]) ~= 0) then
+				ChannelList[outCnt] = {}
+				ChannelList[outCnt].chan = tonumber(lul_parameters[chName])
+--				ChannelList[outCnt].axis = tonumber(lul_parameters[chName])   axis
+				outCnt = outCnt + 1
+			end
 		end
-	end
-	if(lul_parameters.channel2 ~= nul) then
-		if(tonumber(lul_parameters.channel2) ~= 0) then
-			ChannelList[2] = {}
-			ChannelList[2].chan = tonumber(lul_parameters.channel2)
-			ChannelList[2].axis = tonumber(lul_parameters.axis2)
-		end
-	end
-	if(lul_parameters.channel3 ~= nul) then
-		if(tonumber(lul_parameters.channel3) ~= 0) then
-			ChannelList[3] = {}
-			ChannelList[3].chan = tonumber(lul_parameters.channel3)
-			ChannelList[3].axis = tonumber(lul_parameters.axis3)
-		end
-	end
-	if(lul_parameters.channel4 ~= nul) then
-		if(tonumber(lul_parameters.channel4) ~= 0) then
-			ChannelList[4] = {}
-			ChannelList[4].chan = tonumber(lul_parameters.channel4)
-			ChannelList[4].axis = tonumber(lul_parameters.axis4)
-		end
-	end
-
+		chCnt = chCnt + 1
+    until chCnt == 10
 	for C,cv in pairs (ChannelList) do
 		Channel = getChannelRef(cv.chan)
 
@@ -1328,35 +1328,29 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 		Stop = 0
 	end
 
-	if(lul_parameters.channel1 ~= nul) then
-		if(tonumber(lul_parameters.channel1) ~= 0) then
-			ChannelList[1] = tonumber(lul_parameters.channel1)
-		end
-	end
-	if(lul_parameters.channel2 ~= nul) then
-		if(tonumber(lul_parameters.channel2) ~= 0) then
-			ChannelList[2] = tonumber(lul_parameters.channel2)
-		end
-	end
-	if(lul_parameters.channel3 ~= nul) then
-		if(tonumber(lul_parameters.channel3) ~= 0) then
-			ChannelList[3] = tonumber(lul_parameters.channel3)
-		end
-	end
-	if(lul_parameters.channel4 ~= nul) then
-		if(tonumber(lul_parameters.channel4) ~= 0) then
-			ChannelList[4] = tonumber(lul_parameters.channel4)
-		end
-	end
 
---	for k,v in pairs (Channel) do
---		luup.log(DATAMINE_LOG_NAME.."Graph >> "..k.."<>"..v)
---	end
+    local chName
+    local chCnt
+    local outCnt
+
+    outCnt = 0
+	chCnt = 0
+    repeat
+        chName = "channel"..chCnt
+		if(lul_parameters[chName] ~= nul) then
+			if(tonumber(lul_parameters[chName]) ~= 0) then
+				ChannelList[outCnt] = tonumber(lul_parameters[chName])
+				outCnt = outCnt + 1
+			end
+		end
+		chCnt = chCnt + 1
+    until chCnt == 10
 
 	local lastVal
 	local lastTime = 0
 	local nextTime = 0
 	local Points = 0
+	local TotalPoints = 0
 	local first
 	local WeekNum
 	local logfile
@@ -1446,11 +1440,12 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 			until WeekNum > nextTime
 
 			Points   = 0
+			TotalPoints = 0
 			first    = 1
 			lastTime = Start - Sample1
 			nextTime = Start
-			minVal   =  99999999
-			maxVal   = -99999999
+			minVal      =  9999999999
+			maxVal      = -9999999999
 
 
 			lastVal  = configData.Variables[Channel].LastVal
@@ -1537,6 +1532,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 --						nextTime = nextTime - Sample1
 --					end
 
+					TotalPoints = TotalPoints + 1
 
 					if(l_time >= nextTime) then
 						if(logLastTime < l_time - (Sample2) and first == 0) then
@@ -1645,7 +1641,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 				end
 				lul_html = lul_html .. "]"
 			end
-			lul_html = lul_html .. ',"min":'..minVal..',"max":'..maxVal..'}'
+			lul_html = lul_html .. ',"pointsRet":'..Points..',"pointsTot":'..TotalPoints..',"min":'..minVal..',"max":'..maxVal..'}'
 		end
 	end
 	lul_html = lul_html .. '],"procTime":'..os.clock()-clockStart
@@ -1664,4 +1660,21 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 	luup.log(DATAMINE_LOG_NAME.."RAW RESPONSE: "..lul_html)
     return lul_html
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
