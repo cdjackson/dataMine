@@ -9,11 +9,6 @@ var chartObject = null;
 //var seriesData = null;
 var RealTimeUpdate = false;
 
-var chartTimeVera = 0;
-var chartTimeResponse = 0;
-var chartTimeRender = 0;
-var chartTimeTotal = 0;
-
 var EVT_NONE = 0;
 var EVT_LINKED = 1;
 var EVT_ALL = 2;
@@ -23,25 +18,34 @@ var eventAxis = -1;
 var graphInfoItems;
 
 var dataTypeArray = [
-    {icon:'node.png'},
-    {icon:'thermometer.png'},
-    {icon:'water.png'},
-    {icon:'switch.png'},
-    {icon:'brightness.png'},
-    {icon:'light-bulb.png'},
-    {icon:'lock.png'},
-    {icon:'thermometer-high.png'},
-    {icon:'thermometer-low.png'},
-    {icon:'weather-cloudy.png'},
-    {icon:'battery-charge.png'},
-    {icon:'clock.png'}
+    {id:0, icon:'node.png', name:'Node'},
+    {id:1, icon:'thermometer.png', name:'Temperature'},
+    {id:2, icon:'water.png', name:'Humidity'},
+    {id:3, icon:'switch.png', name:'Switch'},
+    {id:4, icon:'brightness.png', name:'Light'},
+    {id:5, icon:'light-bulb.png', name:'Energy'},
+    {id:6, icon:'lock.png', name:'Security'},
+    {id:7, icon:'thermometer-high.png', name:'High setpoint'},
+    {id:8, icon:'thermometer-low.png', name:'Low setpoint'},
+    {id:9, icon:'weather-cloudy.png', name:'Weather'},
+    {id:10, icon:'battery-charge.png', name:'Battery'},
+    {id:11, icon:'clock.png', name:'Time'},
+    {id:12, icon:'system-monitor.png', name:'System'},
+    {id:13, icon:'network-ethernet.png', name:'Network'},
+    {id:14, icon:'plug.png', name:'Plug'},
+    {id:15, icon:'remote-control.png', name:'Remote Control'},
+    {id:16, icon:'webcam.png', name:'Webcam'},
+    {id:17, icon:'fire.png', name:'Fire'},
+    {id:18, icon:'computer.png', name:'Computer'},
+    {id:19, icon:'counter.png', name:'Counter'},
+    {id:20, icon:'curtain.png', name:'Curtains'}
 ];
 
 
 chartOptions = {
     chart:{
         renderTo:'chartIsHere',
-        animation:true,
+        animation:false,
         type:'spline',
         zoomType:'x',
         events:{
@@ -257,12 +261,12 @@ function addNotifications(channels, start, stop) {
         var sampleInc = startLen / 500;
         var outCnt = 0;
         var val = 0;
-        for (var chCnt = startLen-1; chCnt >= 0; chCnt--) {
-            if(val > outCnt) {
+        for (var chCnt = startLen - 1; chCnt >= 0; chCnt--) {
+            if (val > outCnt) {
                 data.splice(chCnt, 1);
             }
             else
-            val += sampleInc;
+                val += sampleInc;
             outCnt++;
         }
     }
@@ -376,44 +380,55 @@ function updateChart(channels, start, stop, newChart) {
             var cnt, tot;
             cnt = 0;
             tot = 0;
-            //				for(var s = 0; s < json.series.length; s++) {
-            //					if(flotrChan[s].axis == 0) {
-            //						tot++;
-            //						if(json.series[s].min == 0 & json.series[s].max == 1)
-            //							cnt++;
-            //					}
-//				}
-//				if(tot > 0 & tot == cnt) {
-            //					binaryAxis = 1;
-            //				}
-//				else {
-            //					cnt = 0;
-            //					tot = 0;
-            //					for(var s = 0; s < json.series.length; s++) {
-            //						if(flotrChan[s].axis == 1) {
-            //							tot++;
-            //							if(json.series[s].min == 0 & json.series[s].max == 1)
-            //								cnt++;
-            //						}
-//					}
-//					if(tot > 0 & tot == cnt)
-//						binaryAxis = 2;
-//				}
-
-//				if(binaryAxis == 0) {
-            //					flotrOptions.yaxis.showLabels  = true;
-            //					flotrOptions.y2axis.showLabels = true;
-            //				}
-//				else if(binaryAxis == 1) {
-            //					flotrOptions.yaxis.showLabels  = false;
-            //					flotrOptions.y2axis.showLabels = true;
-            //				}
-//				else if(binaryAxis == 2) {
-            //					flotrOptions.yaxis.showLabels  = true;
-            //					flotrOptions.y2axis.showLabels = false;
-            //				}
 
             if (json.series) {
+
+                // *****************************************
+/*
+                // Count the number of status channels
+                for (var s = 0; s < json.series.length; s++) {
+                    if (flotrChan[s].axis == 0) {
+                        tot++;
+                        if (json.series[s].min == 0 & json.series[s].max == 1)
+                            cnt++;
+                    }
+                }
+
+                if (tot > 0 & tot == cnt) {
+                    // All channels are status channels
+                    binaryAxis = 1;
+                }
+                else {
+                    cnt = 0;
+                    tot = 0;
+                    for (var s = 0; s < json.series.length; s++) {
+                        if (flotrChan[s].axis == 1) {
+                            tot++;
+                            if (json.series[s].min == 0 & json.series[s].max == 1)
+                                cnt++;
+                        }
+                    }
+                    if (tot > 0 & tot == cnt)
+                        binaryAxis = 2;
+                }
+
+                if (binaryAxis == 0) {
+                    flotrOptions.yaxis.showLabels = true;
+                    flotrOptions.y2axis.showLabels = true;
+                }
+                else if (binaryAxis == 1) {
+                    flotrOptions.yaxis.showLabels = false;
+                    flotrOptions.y2axis.showLabels = true;
+                }
+                else if (binaryAxis == 2) {
+                    flotrOptions.yaxis.showLabels = true;
+                    flotrOptions.y2axis.showLabels = false;
+                }
+*/
+
+                //*****************************************
+
+
                 for (var s = 0; s < json.series.length; s++) {
                     graphInfoItems[4 + s] = [];
                     graphInfoItems[4 + s].name = json.series[s].label + " points";
@@ -471,6 +486,8 @@ function updateChart(channels, start, stop, newChart) {
                     options.series[s].data = json.series[s].data;
                     options.series[s].name = json.series[s].label;
                     options.series[s].yAxis = yAxis;
+//                    options.series[s].color = '#FF0000';
+                    //options.series[s].marker = true;
 
                     if (dmDev == null)
                         option.series[s].type = "spline";
@@ -492,6 +509,8 @@ function updateChart(channels, start, stop, newChart) {
                                 break;
                         }
                     }
+
+                    options.series[0].animation = configGUI.graphOptionAnimation;
                 }
 
                 eventAxis = options.series.length;
@@ -585,101 +604,229 @@ function doGraphTime(days) {
     updateChart(chartChannels, ts - (days * 86400), ts);
 }
 
+
 var saveWin;
-function saveGraph(channels) {
-    if (!saveWin) {
-        var form = Ext.widget('form', {
-            layout:{
-                type:'vbox',
-                align:'stretch'
-            },
-            border:false,
-            bodyPadding:10,
+function saveGraph(channels, name, icon) {
+    var defName;
+    var defIcon;
 
-            fieldDefaults:{
-                labelAlign:'top',
-                labelWidth:100,
-                labelStyle:'font-weight:bold'
-            },
-            items:[
-                {
-                    xtype:'textfield',
-                    id:'graphName',
-                    fieldLabel:'Graph Name',
-                    maxLength:50,
-                    enforceMaxLength:true,
-                    afterLabelTextTpl:'<span style="color:red;font-weight:bold" data-qtip="Required.">*</span>',
-//                    vtype:'name',
-                    allowBlank:false
-                },
-                {
-                    xtype:'textfield',
-                    id:'graphRef',
-                    fieldLabel:'Quickview reference',
-                    maxLength:15,
-                    enforceMaxLength:true,
-                    afterLabelTextTpl:'<span data-qtip="Used to reference the graph directly through /dm/graph.html?ref=<i>reference</i>."><img src="images/question.png"></span>',
-                    maskRe:/([0-9a-zA-Z]+)/,
-//                    regex: /[0-9]/,
-                    allowBlank:true
-                }
-            ],
+    if (name == null)
+        defName = "";
+    else
+        defName = name
 
-            buttons:[
-                {
-                    text:'Cancel',
-                    handler:function () {
-                        this.up('form').getForm().reset();
-                        this.up('window').hide();
-                    }
-                },
-                {
-                    text:'Save',
-                    handler:function () {
-//                        if (this.up('form').getForm().isValid()) {
-                        var parms = {};
-                        parms.id = 'lr_dmCtrl';
-                        parms.control = 'saveGraph';
-                        parms.name = Ext.getCmp('graphName').getValue();
-                        parms.ref = Ext.getCmp('graphRef').getValue();
+    if (icon == null)
+        defIcon = 0
+    else
+        defIcon = icon;
 
+    Ext.define('Icons', {
+        extend:'Ext.data.Model',
+        fields:[
+            {type:'number', name:'id'},
+            {type:'string', name:'icon'},
+            {type:'string', name:'name'}
+        ]
+    });
 
-                        for (var chCnt = 0; chCnt < channels.length; chCnt++) {
-                            parms["channel" + (chCnt + 1)] = channels[chCnt].value;
-                        }
-
-                        Ext.Ajax.request({
-                            url:veraServer + '/data_request',
-                            params:parms,
-                            method:'GET',
-                            success:function (response, opts) {
-                                configGraph = Ext.decode(response.responseText);
-                                graphStore.loadData(configGraph);
-                            }
-                        });
-
-
-                        this.up('form').getForm().reset();
-                        this.up('window').hide();
-//                            Ext.MessageBox.alert('Thank you!', 'Your inquiry has been sent. We will respond as soon as possible.');
-//                      }
-                    }
-                }
-            ]
-        });
-
-        saveWin = Ext.widget('window', {
-            title:'Save Graph',
-            closeAction:'hide',
-            width:350,
-            height:175,
-            layout:'fit',
-            resizable:false,
-            modal:true,
-            items:form
-        });
+    var chanData = [];
+    for (var chCnt = 0; chCnt < channels.length; chCnt++) {
+        var dev = getDMDevice(channels[chCnt].value);
+        if (dev != null) {
+            chanData[chCnt] = {};
+            chanData[chCnt].id = channels[chCnt].value;
+            chanData[chCnt].name = dev.Name;
+            chanData[chCnt].axis = channels[chCnt].axis;
+        }
     }
+//        var chanData = {};
+
+    var saveGraphStore = Ext.create('Ext.data.Store', {
+        storeId:'saveGraphStore',
+        fields:[
+            {type:'number', name:'id'},
+            {type:'string', name:'name'},
+            {type:'number', name:'axis'}
+        ],
+        data:chanData
+    });
+    var cellEditing = Ext.create('Ext.grid.plugin.CellEditing', {
+        clicksToEdit:1
+    });
+    var chanList = Ext.create('Ext.grid.Panel', {
+        id:'saveChanGrid',
+        store:saveGraphStore,
+        selType:'cellmodel',
+        hideHeaders:false,
+        header:false,
+        disableSelection:true,
+        height:195,
+//        stateful:true,
+//        stateId:'stateGrid',
+        columns:[
+            {
+                text:'Id',
+                hidden:true,
+                dataIndex:'id'
+            },
+            {
+                text:'Name',
+                hideable:false,
+                flex:8,
+                sortable:true,
+                dataIndex:'name'
+            },
+            {
+                text:'Axis',
+                hideable:false,
+                flex:1,
+                sortable:true,
+                dataIndex:'axis',
+                field:{
+                    xtype:'numberfield',
+                    allowBlank:false,
+                    minValue:1,
+                    maxValue:4
+                }
+            }
+        ],
+        layout:'fit',
+        title:'Channels',
+        viewConfig:{
+            stripeRows:false,
+            enableTextSelection:false,
+            markDirty:false
+        },
+        plugins:[cellEditing]
+    });
+
+    var form = Ext.widget('form', {
+        layout:{
+            type:'vbox',
+            align:'stretch'
+        },
+        border:false,
+        bodyPadding:10,
+        fieldDefaults:{
+            labelAlign:'top',
+            labelWidth:100,
+            labelStyle:'font-weight:bold'
+        },
+        items:[
+            {
+                xtype:'textfield',
+                id:'graphName',
+                fieldLabel:'Graph Name',
+                allowBlank:false,
+                value:defName,
+                maxLength:50,
+                enforceMaxLength:true,
+                afterLabelTextTpl:'<span style="color:red;font-weight:bold" data-qtip="Required.">*</span>',
+//                    vtype:'name',
+                allowBlank:false
+            },
+//            {
+//                xtype:'textfield',
+//                id:'graphRef',
+//                fieldLabel:'Quickview reference',
+//                maxLength:15,
+//                enforceMaxLength:true,
+//                afterLabelTextTpl:'<span data-qtip="Used to reference the graph directly through /dm/graph.html?ref=<i>reference</i>."><img src="images/question.png"></span>',
+//                maskRe:/([0-9a-zA-Z]+)/,
+//                    regex: /[0-9]/,
+//                allowBlank:true
+//            },
+            {
+                xtype:'combobox',
+                fieldLabel:'Icon',
+                id:'graphIcon',
+                name:'graphIcon',
+                store:{model:'Icons', data:dataTypeArray},
+                allowBlank:false,
+                value:defIcon,
+                valueField:'id',
+                displayField:'name',
+                queryMode:'local',
+                forceSelection:true,
+                editable:false,
+                typeAhead:true,
+                queryMode:'local',
+//                    emptyText:'Select Icon',
+                listConfig:{
+                    getInnerTpl:function () {
+                        var tpl = '<div>' +
+                            '<img src="images/{icon}" align="left">&nbsp;&nbsp;' +
+                            '{name}</div>';
+                        return tpl;
+                    }
+                }
+            }
+        ],
+        buttons:[
+            {
+                text:'Cancel',
+                handler:function () {
+                    this.up('window').destroy();
+                }
+            },
+            {
+                text:'Save',
+                handler:function () {
+                    if (this.up('form').getForm().isValid() == false) {
+                        return;
+                    }
+                    var parms = {};
+                    parms.id = 'lr_dmCtrl';
+                    parms.control = 'saveGraph';
+                    parms.name = Ext.getCmp('graphName').getValue();
+                    parms.icon = Ext.getCmp('graphIcon').getValue();
+//                    parms.ref = Ext.getCmp('graphRef').getValue();
+
+                    var data = saveGraphStore.getRange();
+                    for (var chCnt = 0; chCnt < data.length; chCnt++) {
+                        parms["channel" + chCnt] = data[chCnt].get('id');
+                        parms["axis" + chCnt] = data[chCnt].get('axis');
+
+                        if (parms["axis" + chCnt] > 4 | parms["axis" + chCnt] < 1)
+                            parms["axis" + chCnt] = 1;
+                    }
+
+                    Ext.Ajax.request({
+                        url:veraServer + '/data_request',
+                        params:parms,
+                        method:'GET',
+                        success:function (response, opts) {
+                            configGraph = Ext.decode(response.responseText);
+                            graphStore.loadData(configGraph);
+                        }
+                    });
+
+                    this.up('window').destroy();
+                }
+            }
+        ]
+    });
+
+    saveWin = Ext.widget('window', {
+        title:'Save Graph',
+        closeAction:'destroy',
+        width:450,
+        height:370,
+        layout:'fit',
+        resizable:false,
+        draggable:false,
+        modal:true,
+        layout:{
+            type:'vbox',
+            align:'stretch'
+        },
+        items:[chanList, form]
+    });
+
     saveWin.show();
+
+//    if(name != null)
+
 }
 
 Ext.define('DataMine.graph', {
@@ -691,7 +838,7 @@ Ext.define('DataMine.graph', {
 
     initComponent:function () {
         // Default to local time
-        Highcharts.setOptions({global:{useUTC:false}});
+//        Highcharts.setOptions({global:{useUTC:false}});
 
         var tbChart = Ext.create('Ext.toolbar.Toolbar', {
             items:[
@@ -1189,6 +1336,7 @@ Ext.define('DataMine.graph', {
         chartOptions.tooltip.enabled = configGUI.graphOptionTooltip;
         chartOptions.plotOptions.spline.lineWidth = configGUI.graphOptionWidth;
         Highcharts.setOptions({global:{useUTC:!configGUI.graphOptionTime}});
+//        chartOptions.chart.animation = configGUI.graphOptionAnimation;
 
         var graphOptions = Ext.create('Ext.grid.property.Grid', {
             title:'Graph Options',
@@ -1203,7 +1351,8 @@ Ext.define('DataMine.graph', {
                 "Display crosshairs":configGUI.graphOptionCrosshairs,
                 "Display tooltip":configGUI.graphOptionTooltip,
                 "Display local times":configGUI.graphOptionTime,
-                "Line width":configGUI.graphOptionWidth
+                "Line width":configGUI.graphOptionWidth,
+                "Animation":configGUI.graphOptionAnimation
             },
             listeners:{
                 propertychange:function (source, recordId, value, oldValue, eOpts) {
@@ -1268,6 +1417,11 @@ Ext.define('DataMine.graph', {
                             saveGraphOption("graphOptionWidth", value);
                             redrawChart();
                             break;
+                        case "Animation":
+                            configGUI.graphOptionAnimation = value;
+                            saveGraphOption("graphOptionAnimation", value);
+                            redrawChart();
+                            break;
                     }
                 }
             }
@@ -1284,23 +1438,67 @@ Ext.define('DataMine.graph', {
 //        stateId:'stateGrid',
             columns:[
                 {
+                    menuDisabled:true,
+//                    menuText:"",
+//                    sortable:true,
+                    width:24,
+                    hidden:false,
+                    resizable:false,
+//                    tooltip
+                    dataIndex:'Icon',
+                    renderer:function (value, metaData, record, row, col, store, gridView) {
+                        if (dataTypeArray[value] != null)
+                            return '<img src="images/' + dataTypeArray[value].icon + '">';
+                        else
+                            return '<img src="images/node.png">';
+                    }
+                },
+                {
                     text:'Name',
                     hideable:false,
                     flex:1,
 //                    width:75,
                     sortable:true,
-                    dataIndex:'Name'
+                    dataIndex:'Name',
+                    renderer:function (value, meta, record) {
+                        var Total = configGraph.length;
+                        var tipString = '';
+
+                        var Name = record.get('Name');
+                        for (var Cnt = 0; Cnt < Total; Cnt++) {
+                            if (configGraph[Cnt].Name == Name) {
+                                // Found the reference, load the channels
+                                var chTotal = configGraph[Cnt].Channels.length;
+                                var tipString = '<B>' + value + '</B> - ' + chTotal + ' channels<br>';
+                                for (var chCnt = 0; chCnt < chTotal; chCnt++) {
+                                    // Convert the Device:Service:Variable to the id
+                                    var cfTotal = configChan.length;
+                                    for (var cfCnt = 0; cfCnt < cfTotal; cfCnt++) {
+                                        if (configChan[cfCnt].Device == configGraph[Cnt].Channels[chCnt].Device &
+                                            configChan[cfCnt].Service == configGraph[Cnt].Channels[chCnt].Service &
+                                            configChan[cfCnt].Variable == configGraph[Cnt].Channels[chCnt].Variable)
+                                            tipString += '&nbsp&nbsp&nbsp' + configChan[cfCnt].Name + '<br>';
+                                    }
+                                }
+                            }
+                        }
+
+                        meta.tdAttr = 'data-qtip="' + tipString + '"';
+
+                        return value;
+                    }
                 },
                 {
                     menuDisabled:true,
                     sortable:false,
                     xtype:'actioncolumn',
-                    width:30,
+                    width:40,
                     items:[
                         {
                             icon:'images/cross-small.png',
                             tooltip:'Delete saved graph',
                             handler:function (grid, rowIndex, colIndex) {
+//                                listeners:
                                 var rec = graphStore.getAt(rowIndex);
 
                                 var parms = {};
@@ -1317,6 +1515,47 @@ Ext.define('DataMine.graph', {
                                     }
                                 });
                             }
+                        },
+                        {
+                            icon:'images/layer--pencil.png',
+                            tooltip:'Edit saved graph',
+                            handler:function (grid, rowIndex, colIndex) {
+//                                listeners:
+                                var record = graphStore.getAt(rowIndex);
+                                var Icon = 0;
+                                var Name = record.get('Name');
+
+                                var Total = configGraph.length;
+                                for (var Cnt = 0; Cnt < Total; Cnt++) {
+                                    if (configGraph[Cnt].Name == Name) {
+                                        Icon = configGraph[Cnt].Icon;
+
+                                        // Found the reference, load the channels
+                                        var channels = new Array();
+                                        var chTotal = configGraph[Cnt].Channels.length;
+                                        for (var chCnt = 0; chCnt < chTotal; chCnt++) {
+                                            channels[chCnt] = {};
+                                            if (configGraph[Cnt].Channels[chCnt].yAxis == null)
+                                                channels[chCnt].axis = 1;
+                                            else
+                                                channels[chCnt].axis = configGraph[Cnt].Channels[chCnt].yAxis;
+
+                                            // Convert the Device:Service:Variable to the id
+                                            var cfTotal = configChan.length;
+                                            for (var cfCnt = 0; cfCnt < cfTotal; cfCnt++) {
+                                                if (configChan[cfCnt].Device == configGraph[Cnt].Channels[chCnt].Device &
+                                                    configChan[cfCnt].Service == configGraph[Cnt].Channels[chCnt].Service &
+                                                    configChan[cfCnt].Variable == configGraph[Cnt].Channels[chCnt].Variable)
+                                                    channels[chCnt].value = configChan[cfCnt].Id;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                saveGraph(channels, Name, Icon);
+                            }
+                            //}
+
                         }
                     ]}
             ],
@@ -1328,7 +1567,7 @@ Ext.define('DataMine.graph', {
                 markDirty:false
             },
             listeners:{
-                itemclick:function (grid, record, item, index, element, eOpts) {
+                itemmousedown:function (grid, record, item, index, element, eOpts) {
                     if (item != null) {
                         var Name = record.get('Name');
 
@@ -1340,7 +1579,10 @@ Ext.define('DataMine.graph', {
                                 var chTotal = configGraph[Cnt].Channels.length;
                                 for (var chCnt = 0; chCnt < chTotal; chCnt++) {
                                     channels[chCnt] = {};
-                                    channels[chCnt].axis = configGraph[Cnt].Channels[chCnt].yAxis;
+                                    if (configGraph[Cnt].Channels[chCnt].yAxis == null)
+                                        channels[chCnt].axis = 0;
+                                    else
+                                        channels[chCnt].axis = configGraph[Cnt].Channels[chCnt].yAxis - 1;
 
                                     // Convert the Device:Service:Variable to the id
                                     var cfTotal = configChan.length;
@@ -1364,21 +1606,6 @@ Ext.define('DataMine.graph', {
                         }
                     }
                 }
-            },
-            clearSelection:function () {
-                var storeSize = channelStore.data.length;
-                for (var rowIndex = 0; rowIndex < storeSize; rowIndex++) {
-                    var rec = channelStore.getAt(rowIndex);
-                    if (rec.get('selected') == 1) {
-                        rec.set('yAxis', 0);
-                        rec.set('selected', 0);
-                    }
-                }
-
-                this.selectedChans = 0;
-                Ext.getCmp('chartChanTb-update').disable();
-                Ext.getCmp('chartChanTb-save').disable();
-                //Ext.getCmp('chartChanTb-clear').disable();
             }
         });
 

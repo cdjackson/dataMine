@@ -26,6 +26,7 @@ Ext.require([
     'Ext.form.*',
     'Ext.tree.Panel',
     'Ext.container.Viewport',
+    'Ext.selection.CellModel',
     'Ext.layout.container.Border',
     'Ext.layout.container.Accordion',
     'Ext.ux.GroupTabPanel',
@@ -379,42 +380,47 @@ function applyGuiDefaults() {
     if (configGUI.graphDefaultPeriod < 1)
         configGUI.graphDefaultPeriod = 1;
 
-    if(configGUI.graphOptionMarkers == null)
+    if (configGUI.graphOptionMarkers == null)
         configGUI.graphOptionMarkers = false;
-    if(configGUI.graphOptionMarkers != true)
+    if (configGUI.graphOptionMarkers != true)
         configGUI.graphOptionMarkers = false;
 
-    if(configGUI.graphOptionShadows == null)
+    if (configGUI.graphOptionShadows == null)
         configGUI.graphOptionShadows = false;
-    if(configGUI.graphOptionShadows != true)
+    if (configGUI.graphOptionShadows != true)
         configGUI.graphOptionShadows = false;
 
-    if(configGUI.graphOptionLegend == null)
+    if (configGUI.graphOptionLegend == null)
         configGUI.graphOptionLegend = true;
-    if(configGUI.graphOptionLegend != false)
+    if (configGUI.graphOptionLegend != false)
         configGUI.graphOptionLegend = true;
 
-    if(configGUI.graphOptionCrosshairs == null)
+    if (configGUI.graphOptionCrosshairs == null)
         configGUI.graphOptionCrosshairs = true;
-    if(configGUI.graphOptionCrosshairs != false)
+    if (configGUI.graphOptionCrosshairs != false)
         configGUI.graphOptionCrosshairs = true;
 
-    if(configGUI.graphOptionTooltip == null)
+    if (configGUI.graphOptionTooltip == null)
         configGUI.graphOptionTooltip = true;
-    if(configGUI.graphOptionTooltip != false)
+    if (configGUI.graphOptionTooltip != false)
         configGUI.graphOptionTooltip = true;
 
-    if(configGUI.graphOptionTime == null)
+    if (configGUI.graphOptionTime == null)
         configGUI.graphOptionTime = true;
-    if(configGUI.graphOptionTime != false)
+    if (configGUI.graphOptionTime != false)
         configGUI.graphOptionTime = true;
 
-    if(configGUI.graphOptionWidth == null)
+    if (configGUI.graphOptionWidth == null)
         configGUI.graphOptionWidth = 3;
-    if(configGUI.graphOptionWidth > 10)
+    if (configGUI.graphOptionWidth > 10)
         configGUI.graphOptionWidth = 3;
-    if(configGUI.graphOptionWidth < 1)
+    if (configGUI.graphOptionWidth < 1)
         configGUI.graphOptionWidth = 1;
+
+    if (configGUI.graphOptionAnimation == null)
+        configGUI.graphOptionAnimation = true;
+    if (configGUI.graphOptionAnimation != false)
+        configGUI.graphOptionAnimation = true;
 }
 
 var energyCategoryMatrix = [];
@@ -662,7 +668,7 @@ function getEvents() {
                 if (res.Events[listCnt].timestamp != null) {
                     veraNotifications.Events.push(res.Events[listCnt]);
 
-                    if(res.Events[listCnt].timestamp > veraNotificationsLast)
+                    if (res.Events[listCnt].timestamp > veraNotificationsLast)
                         veraNotificationsLast = res.Events[listCnt].timestamp;
                 }
             }
@@ -675,7 +681,7 @@ function getEvents() {
 }
 
 function doUSBConfig() {
-    if(appConfig.luup.SetManualMount == 1)
+    if (appConfig.luup.SetManualMount == 1)
         return;
 
     if (USBConfigOnce == true)
@@ -683,10 +689,10 @@ function doUSBConfig() {
     USBConfigOnce = true;
 
     var uuid = [];
-    for ( var i = 0, c = appConfig.blkid.length; i < c; i++ ) {
+    for (var i = 0, c = appConfig.blkid.length; i < c; i++) {
         uuid[i] = {};
         uuid[i].id = appConfig.blkid[i].uuid;
-        if(appConfig.blkid[i].label != null)
+        if (appConfig.blkid[i].label != null)
             uuid[i].name = appConfig.blkid[i].uuid + " (" + appConfig.blkid[i].label + ")";
         else
             uuid[i].name = appConfig.blkid[i].uuid;
@@ -694,10 +700,10 @@ function doUSBConfig() {
 
     // Define the model for a State
     Ext.define('USB', {
-        extend: 'Ext.data.Model',
-        fields: [
-            {type: 'string', name: 'id'},
-            {type: 'string', name: 'name'}
+        extend:'Ext.data.Model',
+        fields:[
+            {type:'string', name:'id'},
+            {type:'string', name:'name'}
         ]
     });
 
@@ -717,25 +723,25 @@ function doUSBConfig() {
         items:[
             {
                 xtype:'textareafield',
-                id: 'usbInfo',
+                id:'usbInfo',
                 flex:1,
                 margins:'0'
             },
             {
-                xtype: 'combobox',
-                fieldLabel: 'USB UUID',
+                xtype:'combobox',
+                fieldLabel:'USB UUID',
                 id:'usbUUID',
-                name: 'state',
-                store: {model: 'USB', data: uuid},
+                name:'usbUUID',
+                store:{model:'USB', data:uuid},
 //                value: appConfig.luup.SetMountUUID,
-                valueField: 'id',
-                displayField: 'name',
-                queryMode: 'local',
+                valueField:'id',
+                displayField:'name',
+                queryMode:'local',
                 forceSelection:true,
                 editable:false,
-                typeAhead: true,
-                queryMode: 'local',
-                emptyText: 'Select USB Drive'
+                typeAhead:true,
+                queryMode:'local',
+                emptyText:'Select USB Drive'
             }
         ],
 
@@ -743,8 +749,19 @@ function doUSBConfig() {
             {
                 text:'Cancel',
                 handler:function () {
-                    this.up('form').getForm().reset();
-                    this.up('window').hide();
+                    Ext.getCmp('usbWindow').hide();
+                    Ext.MessageBox.show({
+                        msg:'You have not configured dataMine. ' +
+                            'You must now do this manually, or you can refresh the GUI to complete the setup again. ' +
+                            'Until this is done, the system may not work as planned<br><br>' +
+                            'Please restart Luup (press the Reload button in UI5).<br>' +
+                            'Wait a moment before then refreshing the GUI.',
+                        width:400,
+                        height:40,
+                        icon:'graph-download-warning',
+                        draggable:false,
+                        closable:false
+                    });
                 }
             },
             {
@@ -763,12 +780,27 @@ function doUSBConfig() {
                             params:parms,
                             method:'GET',
                             success:function (response, opts) {
-                                Ext.MessageBox.alert('Configuration Saved', 'Please restart Luup (press the Reload button in UI5).');
                                 Ext.getCmp('usbWindow').hide();
+                                Ext.MessageBox.show({
+                                    msg:'Please restart Luup (press the Reload button in UI5). ' +
+                                        'Wait a moment before then refreshing the GUI.',
+                                    width:400,
+                                    height:40,
+                                    icon:'graph-download-warning',
+                                    draggable:false,
+                                    closable:false
+                                });
                             },
                             failure:function (response, opts) {
-                                Ext.MessageBox.alert('Error', 'There was an error saving the data.');
                                 Ext.getCmp('usbWindow').hide();
+                                Ext.MessageBox.show({
+                                    msg:'There was an error saving the data.',
+                                    width:200,
+                                    height:40,
+                                    icon:'graph-download-error',
+                                    draggable:false,
+                                    closable:false
+                                });
                             }
                         });
                     }
@@ -860,7 +892,8 @@ function createUI() {
     Ext.define('GraphList', {
         extend:'Ext.data.Model',
         fields:[
-            {name:'Name'}
+            {name:'Name'},
+            {name:'Icon'}
         ]
         //,
         //idProperty:'channels'
@@ -873,13 +906,14 @@ function createUI() {
 //        data: configChan.list
     });
 
-
-//    if (configGraph != null) {
-//        var chLen = configChan.length;
-//        for (var chCnt = 0; chCnt < chLen; chCnt++) {
-//
-//        }
-//    }
+    // Check to see if there are no null in the array!!
+    if (configGraph != null) {
+        var chLen = configGraph.length;
+        for (var chCnt = 0; chCnt < chLen; chCnt++) {
+            if (configGraph[chCnt] == null)
+                configGraph.splice(chCnt, 1)
+        }
+    }
 
     graphStore.loadData(configGraph);
 
@@ -959,11 +993,12 @@ function createUI() {
                             // Server has restarted - notify user (?)
                             Ext.MessageBox.show({
                                 msg:'Vera has restarted. Data may have changed and it is advisable to reload the dataMine GUI.',
-                                width:100,
-                                height:40,
+                                width:375,
+                                height:140,
                                 icon:'graph-download-warning',
                                 draggable:false,
-                                closable:true
+                                closable:false,
+                                buttons: Ext.Msg.OK
                             });
 
                             // Force a full update of the status

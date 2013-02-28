@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.968.1a"
+local dmLuaVersion = "0.970"
 
 local mountLocal = ""
 
@@ -241,9 +241,6 @@ function initialise(lul_device)
 --	local url = "https://apps.mios.com/get_plugin_json2.php?plugin=1088&ap=".. luup.pk_accesspoint .."&HW_Key=".. luup.hw_key
 --	local status, content = luup.inet.wget(url)
 --	luup.log(DATAMINE_LOG_NAME.."status = "..status..", content = "..content)
-
-	-- Delete files from previous version of dataMine (ie jqWidgets)
-	removeOldVersion()
 
 	-- The data directory is stored as a service variable to allow it to be
 	-- read out before the config file.
@@ -543,17 +540,17 @@ function initialise(lul_device)
 					-- History......
 					if(historyEnabled == 1) then
 						if(v.Alpha == 1) then
-							luup.log(DATAMINE_LOG_NAME.."History STOP")
+--							luup.log(DATAMINE_LOG_NAME.."History STOP")
 							v.historyState = HISTORYSTATE_STOP
 						elseif(v.FirstRec == 0) then
-							luup.log(DATAMINE_LOG_NAME.."History INIT")
+--							luup.log(DATAMINE_LOG_NAME.."History INIT")
 							v.historyState = HISTORYSTATE_INIT
 						else
-							luup.log(DATAMINE_LOG_NAME.."History STARTUP")
+--							luup.log(DATAMINE_LOG_NAME.."History STARTUP")
 							v.historyState = HISTORYSTATE_STARTUP
 						end
 					else
-						luup.log(DATAMINE_LOG_NAME.."History STOP")
+--						luup.log(DATAMINE_LOG_NAME.."History STOP")
 						v.historyState = HISTORYSTATE_STOP
 					end
 				end
@@ -609,22 +606,80 @@ function initialise(lul_device)
 	historyNextHour = (math.floor(os.time() / 3600) + 1) * 3600
 
 	if(stateInitialised == true) then
-		luup.call_delay('doWork', 30, "")
+		luup.call_delay('doWork', 40, "")
 	end
+
+	-- There's still a few more housekeeping tasks to do
+	-- but let's return from here and finish up shortly
+	luup.call_delay('deferredStartup', 15, "")
+
 
 	-- Startup is done.
 	luup.log(DATAMINE_LOG_NAME .. "Startup complete")
 end
 
+function deferredStartup()
+	-- Remove files from old versions
+	removeOldVersion()
+
+	-- Delete old backup config files
+	cleanConfigBackup()
+end
+
 -- Removes files from previous versions of GUI
 function removeOldVersion()
+	-- Delete files from previous version of dataMine (ie jqWidgets)
 	os.execute("rm -rf /www/dm/app/")
 	os.execute("rm -rf /www/dm/jqwidgets/")
 end
 
 -- Delete backup config files
-function cleanConfig()
-	os.remove(logfile)
+function cleanConfigBackup()
+	-- Get a directory list of all backup files
+	os.execute("ls "..dataDir.."*.backup > "..tmpFilename)
+
+    local inf = io.open(tmpFilename, 'r')
+	if(inf == nil) then
+		luup.log(DATAMINE_LOG_NAME, "Can't open tmp file for delete backups")
+		return
+	end
+
+	local files = {}
+	while true do
+		line = inf:read("*line")
+		if(line == nil) then
+			break
+		end
+
+		month,day,hour,min,sec,year = line:match("(%a+)%s+(%d+)%s+(%d+)-(%d+)-(%d+) (%d+)")
+		MON={Jan=1,Feb=2,Mar=3,Apr=4,May=5,Jun=6,Jul=7,Aug=8,Sep=9,Oct=10,Nov=11,Dec=12}
+		month=MON[month]
+
+		newfile = {}
+		newfile.name = line
+		newfile.time = os.time({tz=tz,day=day,month=month,year=year,hour=hour,min=min,sec=sec})
+
+		table.insert(files, newfile)
+	end
+	inf:close()
+
+	-- Get them into order - most recent first
+	table.sort(files, function(a,b) return a.time>b.time end)
+
+	local total   = 0
+	local deleted = 0
+	for k,v in pairs(files) do
+		-- Keep count of how many files we had
+		total = total + 1
+		if(k > 10) then
+			-- Keep count of how many files we deleted
+			deleted = deleted + 1
+			os.execute("rm '"..v.name.."'")
+			luup.log(DATAMINE_LOG_NAME.. "Deleting  config backup - "..v.name)
+		end
+	end
+
+	luup.log(DATAMINE_LOG_NAME.."Delete backups done - deleted ".. deleted .." of "..total.. " files")
 end
 
 function getLastRecord(Channel, Last)
@@ -1147,6 +1202,8 @@ function controlSaveGraph(lul_parameters)
 	local newTable = {}
 	newTable.Period   = 0
 	newTable.Channels = {}
+luup.log(DATAMINE_LOG_NAME.."Save Graph")
+luup.log(DATAMINE_LOG_NAME.."Save Graph - "..json.encode(configData.Graphs))
 
 	local chName
     local chCnt
@@ -1159,8 +1216,13 @@ function controlSaveGraph(lul_parameters)
 		if(lul_parameters[chName] ~= nul) then
 			if(tonumber(lul_parameters[chName]) ~= 0) then
 				ChannelList[outCnt] = {}
+luup.log(DATAMINE_LOG_NAME.."Save Graph - ch"..tonumber(lul_parameters[chName]))
+
 				ChannelList[outCnt].chan = tonumber(lul_parameters[chName])
---				ChannelList[outCnt].axis = tonumber(lul_parameters[chName])   axis
+
+				if(lul_parameters["axis"..chCnt] ~= nil) then
+					ChannelList[outCnt].axis = tonumber(lul_parameters["axis"..chCnt])
+				end
 				outCnt = outCnt + 1
 			end
 		end
@@ -1196,8 +1258,11 @@ function controlSaveGraph(lul_parameters)
 		newTable.Period = 86400
 	end
 
+luup.log(DATAMINE_LOG_NAME.."Save Graph - name "..lul_parameters.name)
+
 	newTable.Name      = lul_parameters.name
 	newTable.Reference = lul_parameters.ref
+	newTable.Icon      = tonumber(lul_parameters.icon)
 
 --	luup.log(DATAMINE_LOG_NAME .. "controlSaveGraph: " .. json.encode(newTable))
 
@@ -1206,18 +1271,19 @@ function controlSaveGraph(lul_parameters)
 	for k,v in pairs (configData.Graphs) do
 		if(v.Name == newTable.Name) then
 			-- Remove it for update
-			configData.Graphs[k] = nil
+			table.remove(configData.Graphs, k)
 		end
 	end
 
 	if(chCnt == 0) then
-		return "NOK-NoChan"
+luup.log(DATAMINE_LOG_NAME.."Save Graph - NOK-NOCHAN")
+		return "NOK-NOCHAN"
 	end
 
 	table.insert(configData.Graphs, newTable)
 
 	saveConfig(1)
-
+luup.log(DATAMINE_LOG_NAME.."Save Graph - "..json.encode(configData.Graphs))
 	return json.encode(configData.Graphs)
 end
 
@@ -1761,8 +1827,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 							first = 0
 						end
 
-						table.insert(output, "["..l_time.."000,"..lastVal.."]")
-lul_html = lul_html .. "["..l_time.."000,"..l_val.."]"
+						table.insert(output, "["..l_time.."000,"..l_val.."]")
 						Points = Points+1
 
 --						nextTime = nextTime + Sample1
@@ -1847,7 +1912,7 @@ local workHistory = true
 local workEvents  = true
 function doWork(luup_data)
 --	luup.log(DATAMINE_LOG_NAME.."doWork.."..workStatus.." - "..workCount..".....................")
-
+workHistory = false		-- REMOVE THIS
 	-- Check if the hour has passed - if so, update!
 --	if(historyNextHour < os.time()) then
 --		doHistoryHour()
@@ -1879,19 +1944,21 @@ function doWork(luup_data)
 	if(workHistory == true or workEvents == true) then
 		luup.call_delay('doWork', 3, "")
 	else
-		luup.call_delay('doWork', 30, "")
+		luup.call_delay('doWork', 60, "")
 	end
 end
 
 function dumpDebug()
 	local html = ""
 	html = html .. "-1-===========================================================================\n"
-	os.execute("cat /var/log/cmh/LuaUPnP.log | grep dataMine >"..tmpFilename)
+	os.execute("cat /var/log/cmh/LuaUPnP.log | grep -i dataMine >"..tmpFilename)
 	local fTmp=io.open(tmpFilename,"r")
 	if fTmp ~= nil then
 		local line = fTmp:read("*all")
 		io.close(fTmp)
-		html = html .. line
+		if(line ~= nil) then
+			html = html .. line
+		end
 	end
 	html = html .. "-2-===========================================================================\n"
 	os.execute("blkid >"..tmpFilename)
@@ -1899,7 +1966,9 @@ function dumpDebug()
 	if fTmp ~= nil then
 		local line = fTmp:read("*all")
 		io.close(fTmp)
-		html = html .. line
+		if(line ~= nil) then
+			html = html .. line
+		end
 	end
 	html = html .. "-3-===========================================================================\n"
 	os.execute("mount >"..tmpFilename)
@@ -1907,7 +1976,9 @@ function dumpDebug()
 	if fTmp ~= nil then
 		local line = fTmp:read("*all")
 		io.close(fTmp)
-		html = html .. line
+		if(line ~= nil) then
+			html = html .. line
+		end
 	end
 	html = html .. "-4-===========================================================================\n"
 	os.execute("fdisk >"..tmpFilename)
@@ -1915,7 +1986,9 @@ function dumpDebug()
 	if fTmp ~= nil then
 		local line = fTmp:read("*all")
 		io.close(fTmp)
-		html = html .. line
+		if(line ~= nil) then
+			html = html .. line
+		end
 	end
 	html = html .. "-5-===========================================================================\n"
 	html = html .. "SetDataDirectory-"..luup.variable_get(SERVICE_ID, "SetDataDirectory", lul_device).."\n"
@@ -1930,14 +2003,13 @@ function dumpDebug()
 end
 
 function getSysInfo()
-luup.log(DATAMINE_LOG_NAME.."SysInfo")
 	local code, res = luup.inet.wget("http://127.0.0.1/cgi-bin/cmh/sysinfo.sh", 3, "", "")
 	if(code == -1) then
 luup.log(DATAMINE_LOG_NAME.."SysInfo err")
 		return
 	end
-luup.log(DATAMINE_LOG_NAME..res)
 	sysInfo = json.decode(res)
+luup.log(DATAMINE_LOG_NAME.."SysInfo Ok. "..sysInfo.hwkey)
 end
 
 function doEvents()
@@ -1967,14 +2039,14 @@ function doEvents()
 luup.log(DATAMINE_LOG_NAME..lul_cmd)
 	local code, res = luup.inet.wget(lul_cmd, 25, "", "")
 	if(code == -1) then
-luup.log(DATAMINE_LOG_NAME.."Ret error -1")
+luup.log(DATAMINE_LOG_NAME.."Events Ret error -1")
 		return false
 	end
 luup.log(DATAMINE_LOG_NAME..res)
 
 	local eventList = json.decode(res)
 	if(eventList == nul) then
-luup.log(DATAMINE_LOG_NAME.."json=null")
+luup.log(DATAMINE_LOG_NAME.."Events json=null")
 		return false
 	end
 
@@ -1988,6 +2060,8 @@ luup.log(DATAMINE_LOG_NAME.."json=null")
 
 		configData.Events.last = tonumber(eventList.records[1].timestamp)
 		configData.Events.next = tonumber(eventList.records[1].timestamp)
+
+	luup.log(DATAMINE_LOG_NAME.."Event #1 found!!!")
 
 		return true
 	end
@@ -2031,6 +2105,9 @@ luup.log(DATAMINE_LOG_NAME.."json=null")
 	outf:close()
 
 	if(updConfig == 1) then
+
+--	luup.log(DATAMINE_LOG_NAME.."Events updated!!!")
+
 		saveConfig(0)
 		return true
 	end
