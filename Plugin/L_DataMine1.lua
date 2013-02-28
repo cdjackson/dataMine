@@ -8,13 +8,14 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.967"
+local dmLuaVersion = "0.968.1a"
 
 local mountLocal = ""
 
 local timeoutPeriod = 12
 local historyEnabled
 local historyNextHour
+local eventsEnabled
 
 local DATAMINE_CONFIG   = "dataMineConfig.json"
 local DATAMINE_LOG_NAME = "dataMine: "
@@ -46,6 +47,11 @@ local Debug = 0
 local ChannelCnt = 0
 local ChannelRec = 0
 local loadTime = 0
+local sysInfo = nil
+local errorStatus = false
+local errorCount  = 0
+local stateInitialised = false
+
 
 local mountLocation = ""
 local mountType     = ""
@@ -303,16 +309,30 @@ function initialise(lul_device)
 		luup.variable_set(SERVICE_ID, "SetHistoryEnable", historyEnabled, lul_device)
 	end
 	historyEnabled = tonumber(historyEnabled)
-	if(historyEnabled > 0) then
-		historyEnabled = 1
-	else
+--	if(historyEnabled > 0) then
+--		historyEnabled = 1
+--	else
 		historyEnabled = 0
+--	end
+
+	-- Is notifications enabled?
+	eventsEnabled = luup.variable_get(SERVICE_ID, "SetEventsEnable", lul_device)
+	if(eventsEnabled == nil) then
+		eventsEnabled = 1
+		luup.variable_set(SERVICE_ID, "SetEventsEnable", eventsEnabled, lul_device)
+	end
+	eventsEnabled = tonumber(eventsEnabled)
+	if(eventsEnabled > 0) then
+		eventsEnabled = 1
+	else
+		eventsEnabled = 0
 	end
 
 	-- Set the logging variables so that the user sees "0" if there's an error
 	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, lul_device)
 	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, lul_device)
 
+	stateInitialised = true
 	if(tonumber(manualMount) == 1) then
 		luup.variable_set(SERVICE_ID, "mountLocation", "** Manual", lul_device)
 		luup.variable_set(SERVICE_ID, "mountType",     "** Manual", lul_device)
@@ -338,8 +358,8 @@ function initialise(lul_device)
 			if(mountLocation ~= mountPoint) then
 				luup.task("Mount point error: ".. mountLocation.."::"..mountPoint, 2, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), -1)
 				luup.log(DATAMINE_LOG_NAME.."Mount point error: ".. mountLocation.."::"..mountPoint)
-
-				return
+				errorStatus = true
+				stateInitialised = false
 			end
 		end
 	end
@@ -430,7 +450,7 @@ function initialise(lul_device)
 					end
 
 					if(v.LastVal == nil) then
-						v.LastVal = ""
+						v.LastVal = 0
 					end
 
 					if(v.DataType == nil) then
@@ -456,6 +476,7 @@ function initialise(lul_device)
 						v.DataOffset = 0
 					end
 
+
 					if(v.Alpha == 1) then
 						if(type(v.Lookup) ~= "table") then
 	--						luup.log(DATAMINE_LOG_NAME..v.Name.." is not table")
@@ -466,19 +487,31 @@ function initialise(lul_device)
 					if(v.Alpha == 0 or v.Alpha == nil) then
 						v.Lookup = nil
 					end
-
 					local LastValue = luup.variable_get(v.Service, v.Variable, v.Device)
 					if(LastValue == nil) then
 						v.Ghost = true
 					else
+						-- Get the time and value of the last record we have logged
 						local LastRecTime, LastRecVal = getLastRecord(v, configData.LastWrite)
+
+						LastRecTime = tonumber(LastRecTime)
+						if(tonumber(LastRecValue) ~= nul) then
+							LastRecValue = tonumber(LastRecValue)
+						end
+
 						if(LastRecTime ~= v.LastRec) then
 							v.LastRec = LastRecTime
 							configUpdated = true
 						end
+
 						-- If there was an updated "LastValue" from the log, then use it
 						if(LastRecValue ~= v.LastVal and LastRecValue ~= nil) then
 							v.LastVal = LastRecValue
+						end
+
+						-- See if it will convert to a number
+						if(tonumber(LastValue) ~= nil) then
+							LastValue = tonumber(LastValue)
 						end
 
 						if(v.LastVal ~= LastValue) then
@@ -503,13 +536,26 @@ function initialise(lul_device)
 						end
 					end
 
-
 					-- ***************************************************************************
 					-- ***************************************************************************
 					-- ***************************************************************************
 					-- ***************************************************************************
 					-- History......
-
+					if(historyEnabled == 1) then
+						if(v.Alpha == 1) then
+							luup.log(DATAMINE_LOG_NAME.."History STOP")
+							v.historyState = HISTORYSTATE_STOP
+						elseif(v.FirstRec == 0) then
+							luup.log(DATAMINE_LOG_NAME.."History INIT")
+							v.historyState = HISTORYSTATE_INIT
+						else
+							luup.log(DATAMINE_LOG_NAME.."History STARTUP")
+							v.historyState = HISTORYSTATE_STARTUP
+						end
+					else
+						luup.log(DATAMINE_LOG_NAME.."History STOP")
+						v.historyState = HISTORYSTATE_STOP
+					end
 				end
 			end
 		end
@@ -522,19 +568,27 @@ function initialise(lul_device)
 		luup.log(DATAMINE_LOG_NAME .. "Reinitialising configuration structure")
 		configData = {}
 		configData.Variables = {}
-		configData.Graphs = {}
-		configData.nextId = 1
-		configUpdated = true
+		configData.Graphs    = {}
+		configData.nextId    = 1
+		configUpdated        = true
 	end
 
 	if(configData.Graphs == nil) then
 		configData.Graphs = {}
-		configUpdated = true
+		configUpdated     = true
 	end
 
 	if(configData.guiConfig == nil) then
 		configData.guiConfig = {}
-		configUpdated = true
+		configUpdated        = true
+	end
+
+	if(configData.Events == nil) then
+		configData.Events       = {}
+		configData.Events.last  = 0
+		configData.Events.next  = 0
+		configData.Events.count = 0
+		configUpdated           = true
 	end
 
 	-- Keep a reference of the SW version used to save this config
@@ -543,14 +597,20 @@ function initialise(lul_device)
 		saveConfig(1)
 	end
 
+	-- Retreive the Vera system information data
+	getSysInfo()
+
 	-- Register handlers to serve the JSON data
 	luup.register_handler("incomingCtrl", "dmCtrl")
 	luup.register_handler("incomingData", "dmData")
 	luup.register_handler("incomingList", "dmList")
 
-	-- Prepare the history "thread"
+	-- Prepare the worker "thread"
+	historyNextHour = (math.floor(os.time() / 3600) + 1) * 3600
 
-
+	if(stateInitialised == true) then
+		luup.call_delay('doWork', 30, "")
+	end
 
 	-- Startup is done.
 	luup.log(DATAMINE_LOG_NAME .. "Startup complete")
@@ -613,6 +673,10 @@ function getLastRecord(Channel, Last)
         inf:close()
     end
 
+	if(tonumber(LastValue) ~= nil) then
+		LastValue = tonumber(LastValue)
+	end
+
 --	luup.log(DATAMINE_LOG_NAME .. Channel.Name .." got " .. LastTime);
     return LastTime, LastValue
 end
@@ -657,7 +721,16 @@ function checkUUID(UUID)
 			words = {}
 			for word in line:gmatch('[^:" ]+') do table.insert(words, word) end
 
-			if(words[3] == UUID) then
+			local foundUUID = ""
+			for k,v in pairs (words) do
+				print(v.. "  "..k)
+
+				if(v == "UUID=") then
+					foundUUID = words[k+1]
+				end
+			end
+
+			if(foundUUID == UUID) then
 				mount = words[1]
 			end
 		else
@@ -671,7 +744,6 @@ function checkUUID(UUID)
 
 	return mount
 end
-
 
 -- Check the mount point
 function checkMount()
@@ -745,7 +817,7 @@ function getLookup(channel)
 		end
 	end
 
-	return 0
+	return nil
 end
 
 -- Get the channel reference
@@ -783,10 +855,6 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 			-- logfile
 			logfile = dataDir .. v.Archive .. " [R" .. WeekNum .. "].txt"
 
-			-- Remember the last record time and value
-			v.LastRec = os.time()
-			v.LastVal = lul_value_new
-
 			-- save reference
 			varRef = v
 			varKey = k
@@ -800,8 +868,12 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 		return
 	end
 
+	-- Remember the last record time and value
+	varRef.LastRec = os.time()
+
 	-- Detect numerical values. If it's non numerical, keep a lookup table
 	if(tonumber(lul_value_new) == nil) then
+		varRef.LastVal = lul_value_new
 		if(varRef.Lookup == nil) then
 			varRef.Lookup = {}
 		end
@@ -817,6 +889,8 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 			varRef.Alpha = 1
 			saveConfig(1)
 		end
+	else
+		varRef.LastVal = tonumber(lul_value_new)
 	end
 
 
@@ -827,21 +901,25 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 		luup.log(DATAMINE_LOG_NAME .. "Logging error logging variable "..lul_device.."::"..lul_service.."::"..lul_variable)
 		luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
 		luup.log(DATAMINE_LOG_NAME .. "Error: '" .. err .. "'")
+		errorStatus = true
+		errorCount = errorCount + 1
 	else
 		outf:write(os.time() .. ',' .. tostring(lul_value_new) .. '\n')
 		outf:close()
 	end
 
-	if(historyEnabled == 1 and varRef.historyState == HISTORYSTATE_RUN and varKey ~= nil and varRef.Alpha == 0) then
-		lul_value_new = tonumber(lul_value_new)
-		processStats(varKey, os.time(), lul_value_new)
-	end
+--	if(historyEnabled == 1 and varRef.historyState == HISTORYSTATE_RUN and varKey ~= nil and varRef.Alpha == 0) then
+--		lul_value_new = tonumber(lul_value_new)
+--		processStats(varKey, os.time(), lul_value_new)
+--	end
 end
-
 
 -- Write the current configuration to the "dataMineConfig.json" file
 function saveConfig(doBackup)
-	json = require(jsonLib)
+	-- If the USB is not initialised, then return!
+	if(stateInitialised == false) then
+		return
+	end
 
 	local fname = dataDir .. DATAMINE_CONFIG
 
@@ -881,6 +959,78 @@ function saveConfig(doBackup)
 	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, lul_device)
 end
 
+
+function getAppConfig()
+	local config = {}
+
+	config.blkid = {}
+	config.luup  = {}
+
+	os.execute("blkid >"..tmpFilename)
+	local fTmp=io.open(tmpFilename,"r")
+	if fTmp ~= nil then
+
+		local cnt = 0
+		while true do
+			line = fTmp:read("*line")
+			if(line == nil) then
+				-- Close current file
+				break
+			end
+
+			local newId = {}
+
+			words = {}
+			for word in line:gmatch('[^:" ]+') do table.insert(words, word) end
+			newId.mount = words[1]
+
+			for k,v in pairs (words) do
+				print(v.. "  "..k)
+
+				if(v == "UUID=") then
+					newId.uuid = words[k+1]
+				end
+				if(v == "LABEL=") then
+					newId.label = words[k+1]
+				end
+			end
+			table.insert(config.blkid, newId)
+		end
+
+		fTmp:close()
+	else
+		luup.log(DATAMINE_LOG_NAME .. "Error opening tmpfile during BLKID")
+	end
+
+	os.execute("rm "..tmpFilename)
+
+	config.luup.SetDataDirectory = luup.variable_get(SERVICE_ID, "SetDataDirectory", lul_device)
+	config.luup.SetMountUUID     = luup.variable_get(SERVICE_ID, "SetMountUUID",     lul_device)
+	config.luup.SetMountPoint    = luup.variable_get(SERVICE_ID, "SetMountPoint",    lul_device)
+	config.luup.SetManualMount   = luup.variable_get(SERVICE_ID, "SetManualMount",   lul_device)
+
+	return json.encode(config)
+end
+
+function setAppConfig(lul_parameters)
+	if(lul_parameters.SetDataDirectory ~= nil) then
+		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetDataDirectory, lul_device)
+	end
+	if(lul_parameters.SetMountUUID ~= nil) then
+		luup.variable_set(SERVICE_ID, "SetMountUUID", lul_parameters.SetMountUUID, lul_device)
+	end
+	if(lul_parameters.SetDataDirectory ~= nil) then
+		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetMountUUID, lul_device)
+	end
+	if(lul_parameters.SetManualMount ~= nil) then
+		luup.variable_set(SERVICE_ID, "SetManualMount", lul_parameters.SetMountUUID, lul_device)
+	end
+
+	return "Ok"
+end
+
+
+
 -- Get dataMine variable configuration
 function incomingList(lul_request, lul_parameters, lul_outputformat)
 --	luup.log(DATAMINE_LOG_NAME .. "incomingList: " .. lul_request)
@@ -915,6 +1065,8 @@ function incomingCtrl(lul_request, lul_parameters, lul_outputformat)
 
 	if(control == "status") then								-- Get updated system information and any changes to variables
 		return processStatus(lul_parameters)
+	elseif(control == "events") then							-- Get the events list
+		return controlGetEvents(lul_parameters)
 	elseif(control == "saveVar") then							-- Save variable properties
 		return controlSaveVariable(lul_parameters)
 	elseif(control == "delVar") then							-- Delete a variable
@@ -925,8 +1077,6 @@ function incomingCtrl(lul_request, lul_parameters, lul_outputformat)
 		return controlGetGraphList()
 	elseif(control == "delGraph") then							-- Delete a saved graph
 		return controlDeleteGraph(lul_parameters)
-	elseif(control == "history") then							-- Reprocesses all history data for a variable
-		return processHistory(device, service, variable)
 	elseif(control == "graphtypes") then						-- Return the graph types
 		return processGraphTypes()
 	elseif(control == "vartypes") then							-- Return variable types
@@ -935,6 +1085,14 @@ function incomingCtrl(lul_request, lul_parameters, lul_outputformat)
 		return controlSaveConfig(lul_parameters)
 	elseif(control == "listConfig") then						-- Return the list of saved graphs
 		return controlGetGUIConfig()
+	elseif(control == "appConfigGet") then						-- Return UUID information from blkid
+		return getAppConfig()
+	elseif(control == "resetEvents") then						-- Reset the events list
+		return controlResetEvents()
+	elseif(control == "appConfigSet") then						-- Return UUID information from blkid
+		return setAppConfig(lul_parameters)
+	elseif(control == "debug") then							-- Return debug information
+		return dumpDebug()
 	end
 end
 
@@ -958,7 +1116,7 @@ function processStatus(lul_parameters)
 			firstRec = 0
 		end
 	end
-	lul_html = lul_html .. ']}'
+	lul_html = lul_html .. '], "Events":{"last":'..configData.Events.last..',"count":'..configData.Events.count..'}, "System":{"Initialised":'.. tostring(stateInitialised) ..',"ErrorStatus":'.. tostring(errorStatus) ..',"ErrorCount":'.. errorCount ..'}}'
 
 	return lul_html
 end
@@ -1008,6 +1166,7 @@ function controlSaveGraph(lul_parameters)
 		end
 		chCnt = chCnt + 1
     until chCnt == 10
+
 	for C,cv in pairs (ChannelList) do
 		Channel = getChannelRef(cv.chan)
 
@@ -1123,6 +1282,10 @@ function controlSaveConfig(lul_parameters)
 			luup.log(DATAMINE_LOG_NAME.."GUI Config: '"..k.."' set to '"..v.."'")
 			if(v == '""') then
 				configData.guiConfig[k] = nil
+			elseif(v == 'true') then
+				configData.guiConfig[k] = true
+			elseif(v == 'false') then
+				configData.guiConfig[k] = false
 			else
 				configData.guiConfig[k] = v
 			end
@@ -1135,7 +1298,7 @@ function controlSaveConfig(lul_parameters)
 		saveConfig(1)
 	end
 
-	return "OK"
+	return json.encode(configData.guiConfig)
 end
 
 -- Save variable properties
@@ -1144,6 +1307,10 @@ function controlSaveVariable(lul_parameters)
 	local device   = tonumber(lul_parameters.device)
 	local service  = lul_parameters.service
 	local variable = lul_parameters.variable
+
+	if(stateInitialised == false) then
+		return "NOK-NOTINITIALISED"
+	end
 
 	if(device == nil) then
 		return "NOK-NODEVICE"
@@ -1308,10 +1475,10 @@ end
 
 -- Return graph data
 function incomingData(lul_request, lul_parameters, lul_outputformat)
-	luup.log(DATAMINE_LOG_NAME .. "RAW REQUEST: Entry")
-	for i,v in pairs(lul_parameters) do
-		luup.log(DATAMINE_LOG_NAME .. "RAW REQUEST: " .. i.." == "..v)
-	end
+--	luup.log(DATAMINE_LOG_NAME .. "RAW REQUEST: Entry")
+--	for i,v in pairs(lul_parameters) do
+--		luup.log(DATAMINE_LOG_NAME .. "RAW REQUEST: " .. i.." == "..v)
+--	end
 
 	local clockStart = os.clock()
 	local timeoutTime = clockStart + timeoutPeriod
@@ -1346,6 +1513,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 		chCnt = chCnt + 1
     until chCnt == 10
 
+
 	local lastVal
 	local lastTime = 0
 	local nextTime = 0
@@ -1366,6 +1534,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 	local logLastTime
 	local logLastVal
 	local errNum = 0
+	local Lengthen
 
 
 	lul_html = '{"series":['
@@ -1403,6 +1572,12 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 				Start = Stop - (86400 * 1)
 			end
 
+			if(configData.Variables[Channel].Type == 1 or configData.Variables[Channel].Type == 4) then
+				Lengthen = 1
+			else
+				Lengthen = 0
+			end
+
 			-- Calculate the average time between samples
 			Sample1 = math.floor((Stop - Start) / 700)
 
@@ -1418,7 +1593,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 				dataType = "H"
 			else
 				-- Needs something in here to NOT sub sample light switch data - at least at a reduced sample!
-				if(configData.Variables[Channel].Type == 1) then
+				if(Lengthen == 1) then
 					Sample1 = 1
 				end
 				WeekNum  = math.floor(Start / LOGTIME_RAW)
@@ -1439,11 +1614,11 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 				WeekNum = WeekNum + 1
 			until WeekNum > nextTime
 
-			Points   = 0
+			Points      = 0
 			TotalPoints = 0
-			first    = 1
-			lastTime = Start - Sample1
-			nextTime = Start
+			first       = 1
+			lastTime    = Start - Sample1
+			nextTime    = Start
 			minVal      =  9999999999
 			maxVal      = -9999999999
 
@@ -1461,7 +1636,8 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 			end
 			multiChan = 1
 
-			lul_html = lul_html .. '{"label":"'..configData.Variables[Channel].Name..'","data":['
+			lul_html = lul_html .. '{"label":"'..configData.Variables[Channel].Name..'","Id":'.. configData.Variables[Channel].Id ..',"data":['
+			output = {}
 
 			if(inf == nil) then
 				luup.log(DATAMINE_LOG_NAME .. "1:Unable to open file for read - " .. logfile)
@@ -1532,23 +1708,21 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 --						nextTime = nextTime - Sample1
 --					end
 
-					TotalPoints = TotalPoints + 1
-
 					if(l_time >= nextTime) then
 						if(logLastTime < l_time - (Sample2) and first == 0) then
-							lul_html = lul_html .. ","
+--							lul_html = lul_html .. ","
 
 							-- Since we only log changes, we need to assume that the data was
 							-- constant between changes. Therefore, to avoid incorrect graphs
 							-- we need to add another plot if the time between points is too long.
-							if(configData.Variables[Channel].Type == 1) then
-								lul_html = lul_html .. "["..lastTime.."000,"..lastVal.."],"
+							if(Lengthen == 1) then
+								table.insert(output, "["..lastTime.."000,"..lastVal.."]")
 								Points = Points+1
 --							elseif(logLastVal == 0) then
 --								lul_html = lul_html .. "["..lastTime.."000,0],"
 --								Points = Points+1
 							end
-							lul_html = lul_html .. "["..logLastTime.."000,"..logLastVal.."]"
+							table.insert(output, "["..logLastTime.."000,"..logLastVal.."]")
 							Points = Points+1
 						end
 
@@ -1562,13 +1736,11 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 
 --				luup.log(DATAMINE_LOG_NAME .. l_time .. "  ".. l_val)
 						if(first == 0) then
-							lul_html = lul_html .. ","
-
 							-- Since we only log changes, we need to assume that the data was
 							-- constant between changes. Therefore, to avoid incorrect graphs
 							-- we need to add another plot if the time between points is too long.
-							if(configData.Variables[Channel].Type == 1) then
-								lul_html = lul_html .. "["..l_time.."000,"..lastVal.."],"
+							if(Lengthen == 1) then
+								table.insert(output, "["..l_time.."000,"..lastVal.."]")
 								Points = Points+1
 --							elseif(lastVal == 0) then
 --								lul_html = lul_html .. "["..l_time.."000,0],"
@@ -1576,11 +1748,11 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 							end
 						else
 							if(lastVal ~= INVALID_VALUE) then
-								lul_html = lul_html .. "["..Start.."000,"..lastVal.."],"
+								table.insert(output, "["..Start.."000,"..lastVal.."]")
 								Points = 1
 
-								if(configData.Variables[Channel].Type == 1) then
-									lul_html = lul_html .. "["..l_time.."000,"..lastVal.."],"
+								if(Lengthen == 1) then
+									table.insert(output, "["..l_time.."000,"..lastVal.."]")
 									Points = 2
 								end
 							else
@@ -1589,8 +1761,8 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 							first = 0
 						end
 
-	--					lul_html = lul_html .. "=== "..l_time.."  ["..l_time.."000,"..l_val.."]"
-						lul_html = lul_html .. "["..l_time.."000,"..l_val.."]"
+						table.insert(output, "["..l_time.."000,"..lastVal.."]")
+lul_html = lul_html .. "["..l_time.."000,"..l_val.."]"
 						Points = Points+1
 
 --						nextTime = nextTime + Sample1
@@ -1605,6 +1777,8 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 						-- Required here to get the correct start datapoint
 						lastTime = l_time
 						lastVal  = l_val
+					else
+						TotalPoints = TotalPoints + 1
 					end
 					logLastTime = l_time
 					logLastVal  = l_val
@@ -1619,15 +1793,15 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 	--		if(configData.Variables[Channel].Type == 1) then
 				-- If there were no points to display, then we need to add a start point!
 				if(Points == 0) then
-					lul_html = lul_html .. "["..Start.."000,"..lastVal.."]"
+					table.insert(output, "["..Start.."000,"..lastVal.."]")
 					Points = 1
 				end
-				lul_html = lul_html .. ",["..Stop.."000,"..lastVal.."]"
+				table.insert(output, "["..Stop.."000,"..lastVal.."]")
 				Points   = Points+1
 				lastTime = Stop
 	--		end
 
-			lul_html = lul_html .. ']'
+			lul_html = lul_html .. table.concat(output, ",") .. ']'
 
 			if(configData.Variables[Channel].Alpha == 1) then
 				lul_html = lul_html .. ',"ticks":[';
@@ -1639,8 +1813,10 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 					first = 0
 					lul_html = lul_html .. '["'.. k ..'",' .. v .. "]"
 				end
+
 				lul_html = lul_html .. "]"
 			end
+			TotalPoints = TotalPoints + Points
 			lul_html = lul_html .. ',"pointsRet":'..Points..',"pointsTot":'..TotalPoints..',"min":'..minVal..',"max":'..maxVal..'}'
 		end
 	end
@@ -1657,24 +1833,299 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 --	lul_html = lul_html .. '],"min":'..Start..',"max":'..lastTime..',"points":'..Points..'}'
 
 --	luup.log(DATAMINE_LOG_NAME, "Done")
-	luup.log(DATAMINE_LOG_NAME.."RAW RESPONSE: "..lul_html)
+--	luup.log(DATAMINE_LOG_NAME.."RAW RESPONSE: "..lul_html)
     return lul_html
 end
 
+-- Main worker "thread". From here we prioritise and perform all the background functions
+--  * Processing of history data
+--  * Hourly update of history data
+--  * Gathering event history
+local workStatus  = 0
+local workCount   = 0
+local workHistory = true
+local workEvents  = true
+function doWork(luup_data)
+--	luup.log(DATAMINE_LOG_NAME.."doWork.."..workStatus.." - "..workCount..".....................")
+
+	-- Check if the hour has passed - if so, update!
+--	if(historyNextHour < os.time()) then
+--		doHistoryHour()
+--	elseif(workStatus == 0) then
+		-- Process some history data
+--		workHistory = doHistory()
+--	elseif(workStatus == 1) then
+		-- Process some history data
+		workEvents = doEvents()
+--	end
+	if((workEvents == workHistory) or (workCount == 15)) then
+		-- Toggle
+		if(workStatus == 1) then
+			workStatus = 0
+		else
+			workStatus = 1
+		end
+		workCount = 0
+	else
+		if(workHistory == true) then
+			workStatus = 0
+		else
+			workStatus = 1
+		end
+		workCount = workCount + 1
+	end
+
+	local done = false
+	if(workHistory == true or workEvents == true) then
+		luup.call_delay('doWork', 3, "")
+	else
+		luup.call_delay('doWork', 30, "")
+	end
+end
+
+function dumpDebug()
+	local html = ""
+	html = html .. "-1-===========================================================================\n"
+	os.execute("cat /var/log/cmh/LuaUPnP.log | grep dataMine >"..tmpFilename)
+	local fTmp=io.open(tmpFilename,"r")
+	if fTmp ~= nil then
+		local line = fTmp:read("*all")
+		io.close(fTmp)
+		html = html .. line
+	end
+	html = html .. "-2-===========================================================================\n"
+	os.execute("blkid >"..tmpFilename)
+	local fTmp=io.open(tmpFilename,"r")
+	if fTmp ~= nil then
+		local line = fTmp:read("*all")
+		io.close(fTmp)
+		html = html .. line
+	end
+	html = html .. "-3-===========================================================================\n"
+	os.execute("mount >"..tmpFilename)
+	local fTmp=io.open(tmpFilename,"r")
+	if fTmp ~= nil then
+		local line = fTmp:read("*all")
+		io.close(fTmp)
+		html = html .. line
+	end
+	html = html .. "-4-===========================================================================\n"
+	os.execute("fdisk >"..tmpFilename)
+	local fTmp=io.open(tmpFilename,"r")
+	if fTmp ~= nil then
+		local line = fTmp:read("*all")
+		io.close(fTmp)
+		html = html .. line
+	end
+	html = html .. "-5-===========================================================================\n"
+	html = html .. "SetDataDirectory-"..luup.variable_get(SERVICE_ID, "SetDataDirectory", lul_device).."\n"
+	html = html .. "SetMountUUID    -"..luup.variable_get(SERVICE_ID, "SetMountUUID",     lul_device).."\n"
+	html = html .. "SetMountPoint   -"..luup.variable_get(SERVICE_ID, "SetMountPoint",    lul_device).."\n"
+	html = html .. "SetManualMount  -"..luup.variable_get(SERVICE_ID, "SetManualMount",   lul_device).."\n"
+	html = html .. "-6-===========================================================================\n"
+	html = html .. json.encode(configData) .. "\n"
+	html = html .. "-7-===========================================================================\n"
+
+	return html
+end
+
+function getSysInfo()
+luup.log(DATAMINE_LOG_NAME.."SysInfo")
+	local code, res = luup.inet.wget("http://127.0.0.1/cgi-bin/cmh/sysinfo.sh", 3, "", "")
+	if(code == -1) then
+luup.log(DATAMINE_LOG_NAME.."SysInfo err")
+		return
+	end
+luup.log(DATAMINE_LOG_NAME..res)
+	sysInfo = json.decode(res)
+end
+
+function doEvents()
+	local after
+	local before
+	local updConfig
+	local count = 1
+
+	if(configData.Events.last == 0) then
+		-- intialise the system by getting the first ever record
+		count  = 1
+		after  = 0
+		before = os.time()
+	else
+		-- Get more records - up to the end of the week
+		after  = configData.Events.next + 1
+		before = math.floor(after / LOGTIME_RAW) * LOGTIME_RAW + LOGTIME_RAW
+		count  = 100
+	end
+
+	-- Make sure we don't ramp off into the future!
+	if(before > os.time()) then
+		before = os.time()
+	end
+
+	local lul_cmd = 'https://' .. sysInfo.evtserver .. '/list_alerts?hwkey=' .. sysInfo.hwkey .. '&gateway=' .. sysInfo.installation_number..'&count='.. count ..'&unread=0&after='.. after ..'&before=' .. before
+luup.log(DATAMINE_LOG_NAME..lul_cmd)
+	local code, res = luup.inet.wget(lul_cmd, 25, "", "")
+	if(code == -1) then
+luup.log(DATAMINE_LOG_NAME.."Ret error -1")
+		return false
+	end
+luup.log(DATAMINE_LOG_NAME..res)
+
+	local eventList = json.decode(res)
+	if(eventList == nul) then
+luup.log(DATAMINE_LOG_NAME.."json=null")
+		return false
+	end
+
+	-- Detect if this was our initialisation request
+	if(count == 1) then
+		-- Do this to stop file being generated for week 0
+		if(eventList.records[1] == nil) then
+			luup.log(DATAMINE_LOG_NAME.."No Events!!!")
+			return false
+		end
+
+		configData.Events.last = tonumber(eventList.records[1].timestamp)
+		configData.Events.next = tonumber(eventList.records[1].timestamp)
+
+		return true
+	end
+
+	-- Open the logfile
+	local WeekNum = math.floor(after / LOGTIME_RAW)
+	local logfile = dataDir .. "Notifications [R" .. WeekNum .. "].txt"
+	outf = io.open(logfile, 'a')
+	if(outf == nil) then
+		luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
+		return false
+	end
+
+	-- Set the time to the most recent we requested.
+	-- This is so if nothing is returned, we step past a week boundary.
+	-- It will be overwritten below if there is data returned.
+	configData.Events.next = before
+
+	for k,v in pairs (eventList.records) do
+		local newEvt = {}
+		newEvt.id           = tonumber(v.id)
+		newEvt.notification = tonumber(v.notification)
+		newEvt.device       = tonumber(v.device)
+		newEvt.timestamp    = tonumber(v.timestamp)
+		newEvt.type         = tonumber(v.type)
+		newEvt.source       = tonumber(v.source)
+		newEvt.code         = v.code
+		newEvt.value        = v.value
+		newEvt.description  = v.description
+
+		configData.Events.last  = tonumber(v.timestamp)
+		configData.Events.next  = tonumber(v.timestamp)
+		configData.Events.count = configData.Events.count + 1
+
+		outf:write(json.encode(newEvt) .. ',\n')
+
+		updConfig = 1
+	end
+
+	-- Close the output file
+	outf:close()
+
+	if(updConfig == 1) then
+		saveConfig(0)
+		return true
+	end
+
+	return false
+end
+
+function controlResetEvents()
+	configData.Events.last  = 0
+	configData.Events.next  = 0
+	configData.Events.count = 0
+
+	-- Delete all Notification files
+	WeekNum = math.floor(FIRST_YEAR / LOGTIME_RAW)
+	endTime = math.floor(os.time()  / LOGTIME_RAW)
+	repeat
+		logfile = dataDir .. "Notifications [R"..WeekNum.."].txt"
+		-- DELETE
+		os.remove(logfile)
+		WeekNum = WeekNum + 1
+	until WeekNum > endTime
+
+	saveConfig(0)
+
+	return "OK"
+end
+
+function controlGetEvents(lul_parameters)
+	local Start = tonumber(lul_parameters.start)
+	local Stop  = tonumber(lul_parameters.stop)
+
+	local procTime = os.clock()
 
 
+	if Start == nil then
+		Start = 0
+	end
+	if Stop == nil then
+		Stop = 0
+	end
 
 
+	if(Stop == 0) then
+		Stop = os.time()
+	end
 
+	-- The end time can't be newer than now. Otherwise we could get into a loop!
+	if(Stop > os.time()) then
+		Stop = os.time()
+	end
 
+	if(Start == 0) then
+		Start = Stop - (86400 * 1)
+	end
 
+	if(Start < FIRST_YEAR) then
+		Start = FIRST_YEAR
+	end
 
+	-- Don't try and do anything fancy if the times are screwed up
+	-- This shouldn't ever happen!
+	if(Stop < Start) then
+		Stop = os.time()
+		Start = Stop - (86400 * 1)
+	end
 
+--	luup.log("Events start = "..os.date("%X %x",Start).."  "..Start)
+--	luup.log("Events stop  = "..os.date("%X %x",Stop).."  "..Stop)
+	-- Convert the times into file numbers
+	Start = math.floor(Start / LOGTIME_RAW)
+	Stop  = math.floor(Stop  / LOGTIME_RAW)
 
+	local Response = '{"Events":['
+	repeat
+		local logfile = dataDir .. "Notifications [R" .. Start .. "].txt"
+		local inf = io.open(logfile, 'r')
+		if(inf == nil) then
+--			luup.log(DATAMINE_LOG_NAME .. "2:Unable to open file for read - " .. logfile)
+--			luup.log(DATAMINE_LOG_NAME .. "Error: '" .. err .. "'")
+			break
+		end
 
+		-- Read the file
+		local data = inf:read("*all")
+		if(data ~= nil) then
+			-- Concatenate the data
+			Response = Response .. data
+		end
 
+		io.close(inf)
 
+		Start = Start + 1
+	until Start > Stop
 
+	Response = Response .. '{}],"procTime":'..os.clock() - procTime..',"last":'..configData.Events.last..',"count":'..configData.Events.count..'}'
 
-
-
+	return Response
+end
