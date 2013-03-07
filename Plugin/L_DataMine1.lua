@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.970"
+local dmLuaVersion = "0.973.6"
 
 local mountLocal = ""
 
@@ -269,16 +269,6 @@ function initialise(lul_device)
 		luup.variable_set(SERVICE_ID, "SetMountPoint", "", lul_device)
 	end
 
-	if(mountPoint == "" and mountUUID ~= "") then
-		luup.log(DATAMINE_LOG_NAME.. "Mounting to UUID '"..mountUUID.."'")
-		mountPoint = checkUUID(mountUUID)
-		if(mountPoint == "") then
-			luup.log(DATAMINE_LOG_NAME.. "No UUID mount '"..mountUUID.."' was found!")
-		else
-			luup.log(DATAMINE_LOG_NAME.. "Found UUID '"..mountUUID.."' at '"..mountPoint.."'")
-		end
-	end
-
 	-- Do we want to manually mount the USB (or not mount at all!)
 	manualMount = luup.variable_get(SERVICE_ID, "SetManualMount", lul_device)
 	if(manualMount == nil) then
@@ -312,7 +302,7 @@ function initialise(lul_device)
 		historyEnabled = 0
 --	end
 
-	-- Is notifications enabled?
+	-- Are notifications enabled?
 	eventsEnabled = luup.variable_get(SERVICE_ID, "SetEventsEnable", lul_device)
 	if(eventsEnabled == nil) then
 		eventsEnabled = 1
@@ -330,6 +320,7 @@ function initialise(lul_device)
 	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, lul_device)
 
 	stateInitialised = true
+
 	if(tonumber(manualMount) == 1) then
 		luup.variable_set(SERVICE_ID, "mountLocation", "** Manual", lul_device)
 		luup.variable_set(SERVICE_ID, "mountType",     "** Manual", lul_device)
@@ -337,7 +328,22 @@ function initialise(lul_device)
 		os.execute("mkdir "..dataDir)
 
 		luup.log(DATAMINE_LOG_NAME.."Manual mounting to ("..dataDir..")")
+	elseif(mountPoint == "" and mountUUID == "") then
+		-- Error - we haven't specified a manual mount, and we haven't specified a UUID
+		-- Can't mount!
+		stateInitialised = false
 	else
+		-- Check the UUID
+		if(mountPoint == "" and mountUUID ~= "") then
+			luup.log(DATAMINE_LOG_NAME.. "Mounting to UUID '"..mountUUID.."'")
+			mountPoint = checkUUID(mountUUID)
+			if(mountPoint == "") then
+				luup.log(DATAMINE_LOG_NAME.. "No UUID mount '"..mountUUID.."' was found!")
+			else
+				luup.log(DATAMINE_LOG_NAME.. "Found UUID '"..mountUUID.."' at '"..mountPoint.."'")
+			end
+		end
+
 		-- Check if the USB is mounted
 		checkMount()
 
@@ -360,8 +366,6 @@ function initialise(lul_device)
 			end
 		end
 	end
-
-	os.execute("mkdir "..dataDir .. dataDirHistory)
 
 	-- Check if there's a GUI package to unpack
 	local f=io.open("/www/dm/dataMineWeb.tar.gz","r")
@@ -391,171 +395,181 @@ function initialise(lul_device)
 	ChannelCnt = 0
 	ChannelRec = 0
 
-	-- If we make changes, we will need to save the configuration
-	local configUpdated = false
-
 	-- Load the JSON library
 	json = require(jsonLib)
 
-	-- Load the configuration file
-	local inf = io.open(logfile, 'r')
-	if(inf == nil) then
-		luup.log(DATAMINE_LOG_NAME .. "ERROR: Unable to open config file for read :: " .. logfile)
+	if(stateInitialised == false) then
+		luup.log(DATAMINE_LOG_NAME .. "ERROR: Startup state is 'uninitialised'!")
 	else
-		local line = inf:read("*all")
+		-- If we make changes, we will need to save the configuration
+		local configUpdated = false
 
-		if(line == nil) then
-			luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file read failed")
-			configData = nil
-		elseif(string.len(line) == 0) then
-			luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file was zero length")
-			configData = nil
+		-- Load the configuration file
+		local inf = io.open(logfile, 'r')
+		if(inf == nil) then
+			luup.log(DATAMINE_LOG_NAME .. "ERROR: Unable to open config file for read :: " .. logfile)
 		else
-			-- workaround for newer JSON library!
-			string.gsub(line, "%[%]", "%[{}%]")
+			local line = inf:read("*all")
 
-			--luup.log(DATAMINE_LOG_NAME .. "CONFIG: " .. line)
-
-			configData = json.decode(line)
-			if(configData == nil) then
-				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded")
-			elseif(configData.Variables == nil) then
-				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded - no variables")
+			if(line == nil) then
+				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file read failed")
+				configData = nil
+			elseif(string.len(line) == 0) then
+				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file was zero length")
+				configData = nil
 			else
-				-- Make sure the reference counter is initialised
-				if(configData.nextId == nil) then
-					configData.nextId = 1
-					configUpdated = true
-				end
+				-- workaround for newer JSON library!
+				string.gsub(line, "%[%]", "%[{}%]")
 
-				if(configData.LastWrite == nil) then
-					configData.LastWrite = 0
-				end
+				--luup.log(DATAMINE_LOG_NAME .. "CONFIG: " .. line)
 
-				for k,v in pairs (configData.Variables) do
-					v.Device = tonumber(v.Device)
-
-					if(v.Id == nil) then
-						v.Id = configData.nextId
-						configData.nextId = configData.nextId + 1
+				configData = json.decode(line)
+				if(configData == nil) then
+					luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded")
+				elseif(configData.Variables == nil) then
+					luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded - no variables")
+				else
+					-- Make sure the reference counter is initialised
+					if(configData.nextId == nil) then
+						configData.nextId = 1
 						configUpdated = true
 					end
 
-					ChannelCnt = ChannelCnt + 1
-					if(v.LastRec == nil) then
-						v.LastRec = 0
+					if(configData.LastWrite == nil) then
+						configData.LastWrite = 0
 					end
 
-					if(v.LastVal == nil) then
-						v.LastVal = 0
-					end
+					for k,v in pairs (configData.Variables) do
+						v.Device = tonumber(v.Device)
 
-					if(v.DataType == nil) then
-						v.DataType = getDataType(v)
-						configUpdated = true
-					elseif(v.DataType == 0) then
-						v.DataType = getDataType(v)
-						configUpdated = true
-					end
-
-					if(v.Units == nil) then
-						v.Units = getUnits(v)
-						configUpdated = true
-					end
-
-					if(v.DrowsyWarning == nil) then
-						v.DrowsyWarning = 0
-					end
-					if(v.DrowsyError == nil) then
-						v.DrowsyError = 0
-					end
-					if(v.DataOffset == nil) then
-						v.DataOffset = 0
-					end
-
-
-					if(v.Alpha == 1) then
-						if(type(v.Lookup) ~= "table") then
-	--						luup.log(DATAMINE_LOG_NAME..v.Name.." is not table")
-							v.Alpha = 0
-						end
-					end
-
-					if(v.Alpha == 0 or v.Alpha == nil) then
-						v.Lookup = nil
-					end
-					local LastValue = luup.variable_get(v.Service, v.Variable, v.Device)
-					if(LastValue == nil) then
-						v.Ghost = true
-					else
-						-- Get the time and value of the last record we have logged
-						local LastRecTime, LastRecVal = getLastRecord(v, configData.LastWrite)
-
-						LastRecTime = tonumber(LastRecTime)
-						if(tonumber(LastRecValue) ~= nul) then
-							LastRecValue = tonumber(LastRecValue)
-						end
-
-						if(LastRecTime ~= v.LastRec) then
-							v.LastRec = LastRecTime
+						if(v.Id == nil) then
+							v.Id = configData.nextId
+							configData.nextId = configData.nextId + 1
 							configUpdated = true
 						end
 
-						-- If there was an updated "LastValue" from the log, then use it
-						if(LastRecValue ~= v.LastVal and LastRecValue ~= nil) then
-							v.LastVal = LastRecValue
+						ChannelCnt = ChannelCnt + 1
+						if(v.LastRec == nil) then
+							v.LastRec = 0
 						end
 
-						-- See if it will convert to a number
-						if(tonumber(LastValue) ~= nil) then
-							LastValue = tonumber(LastValue)
+						if(v.LastVal == nil) then
+							v.LastVal = 0
 						end
 
-						if(v.LastVal ~= LastValue) then
-							-- Vera thinks the value is different than we last logged, so let's get this updated
-							-- This could happen if a change occurred when dataMine was starting
-							luup.log(DATAMINE_LOG_NAME.."D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."] newVal on startup is "..LastValue.." was "..v.LastVal)
-							watchVariable(v.Device, v.Service, v.Variable, v.LastVal, LastValue)
+						if(v.DataType == nil) then
+							v.DataType = getDataType(v)
+							configUpdated = true
+						elseif(v.DataType == 0) then
+							v.DataType = getDataType(v)
+							configUpdated = true
 						end
 
-						v.LastVal = LastValue
-						v.Ghost = false
-					end
-
-					v.Type = tonumber(v.Type)
-
-					if(v.Logging == 1 and v.Ghost == false) then
-						ChannelRec = ChannelRec + 1
-						luup.variable_watch('watchVariable', v.Service, v.Variable, v.Device)
-						luup.log(DATAMINE_LOG_NAME.."Watching: D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."]")
-						if(v.LastHistory == nil) then
-							v.LastHistory = FIRST_YEAR
+						if(v.Units == nil) then
+							v.Units = getUnits(v)
+							configUpdated = true
 						end
-					end
 
-					-- ***************************************************************************
-					-- ***************************************************************************
-					-- ***************************************************************************
-					-- ***************************************************************************
-					-- History......
-					if(historyEnabled == 1) then
+						if(v.DrowsyWarning == nil) then
+							v.DrowsyWarning = 0
+						end
+						if(v.DrowsyError == nil) then
+							v.DrowsyError = 0
+						end
+						if(v.DataOffset == nil) then
+							v.DataOffset = 0
+						end
+
+
 						if(v.Alpha == 1) then
---							luup.log(DATAMINE_LOG_NAME.."History STOP")
-							v.historyState = HISTORYSTATE_STOP
-						elseif(v.FirstRec == 0) then
---							luup.log(DATAMINE_LOG_NAME.."History INIT")
-							v.historyState = HISTORYSTATE_INIT
-						else
---							luup.log(DATAMINE_LOG_NAME.."History STARTUP")
-							v.historyState = HISTORYSTATE_STARTUP
+							if(type(v.Lookup) ~= "table") then
+								v.Alpha = 0
+							end
 						end
-					else
---						luup.log(DATAMINE_LOG_NAME.."History STOP")
-						v.historyState = HISTORYSTATE_STOP
+
+						if(v.Alpha == 0 or v.Alpha == nil) then
+							v.Lookup = nil
+						end
+						local LastValue = luup.variable_get(v.Service, v.Variable, v.Device)
+						if(LastValue == nil) then
+							v.Ghost = true
+						else
+							-- Get the time and value of the last record we have logged
+							local LastRecTime, LastRecVal = getLastRecord(v, configData.LastWrite)
+
+							LastRecTime = tonumber(LastRecTime)
+							if(tonumber(LastRecValue) ~= nul) then
+								LastRecValue = tonumber(LastRecValue)
+							end
+
+							if(LastRecTime ~= v.LastRec) then
+								v.LastRec = LastRecTime
+								configUpdated = true
+							end
+
+							-- If there was an updated "LastValue" from the log, then use it
+							if(LastRecValue ~= v.LastVal and LastRecValue ~= nil) then
+								v.LastVal = LastRecValue
+							end
+
+							-- See if it will convert to a number
+							if(tonumber(LastValue) ~= nil) then
+								LastValue = tonumber(LastValue)
+							end
+
+							if(v.LastVal ~= LastValue) then
+								-- Vera thinks the value is different than we last logged, so let's get this updated
+								-- This could happen if a change occurred when dataMine was starting
+								luup.log(DATAMINE_LOG_NAME.."D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."] newVal on startup is "..LastValue.." was "..v.LastVal)
+								watchVariable(v.Device, v.Service, v.Variable, v.LastVal, LastValue)
+							end
+
+							v.LastVal = LastValue
+							v.Ghost = false
+						end
+
+						v.Type = tonumber(v.Type)
+
+						if(v.Logging == 1 and v.Ghost == false) then
+							ChannelRec = ChannelRec + 1
+							luup.variable_watch('watchVariable', v.Service, v.Variable, v.Device)
+							luup.log(DATAMINE_LOG_NAME.."Watching: D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."]")
+							if(v.LastHistory == nil) then
+								v.LastHistory = FIRST_YEAR
+							end
+						end
+
+						-- ***************************************************************************
+						-- ***************************************************************************
+						-- ***************************************************************************
+						-- ***************************************************************************
+						-- History......
+						if(historyEnabled == 1) then
+							if(v.Alpha == 1) then
+	--							luup.log(DATAMINE_LOG_NAME.."History STOP")
+								v.historyState = HISTORYSTATE_STOP
+							elseif(v.FirstRec == 0) then
+	--							luup.log(DATAMINE_LOG_NAME.."History INIT")
+								v.historyState = HISTORYSTATE_INIT
+							else
+	--							luup.log(DATAMINE_LOG_NAME.."History STARTUP")
+								v.historyState = HISTORYSTATE_STARTUP
+							end
+						else
+	--						luup.log(DATAMINE_LOG_NAME.."History STOP")
+							v.historyState = HISTORYSTATE_STOP
+						end
 					end
 				end
 			end
 		end
+
+		-- Retreive the Vera system information data
+		getSysInfo()
+
+		-- Prepare the worker "thread"
+		historyNextHour = (math.floor(os.time() / 3600) + 1) * 3600
+		luup.call_delay('doWork', 40, "")
 	end
 
 	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, lul_device)
@@ -567,17 +581,14 @@ function initialise(lul_device)
 		configData.Variables = {}
 		configData.Graphs    = {}
 		configData.nextId    = 1
-		configUpdated        = true
 	end
 
 	if(configData.Graphs == nil) then
 		configData.Graphs = {}
-		configUpdated     = true
 	end
 
 	if(configData.guiConfig == nil) then
 		configData.guiConfig = {}
-		configUpdated        = true
 	end
 
 	if(configData.Events == nil) then
@@ -585,7 +596,6 @@ function initialise(lul_device)
 		configData.Events.last  = 0
 		configData.Events.next  = 0
 		configData.Events.count = 0
-		configUpdated           = true
 	end
 
 	-- Keep a reference of the SW version used to save this config
@@ -594,25 +604,14 @@ function initialise(lul_device)
 		saveConfig(1)
 	end
 
-	-- Retreive the Vera system information data
-	getSysInfo()
-
 	-- Register handlers to serve the JSON data
 	luup.register_handler("incomingCtrl", "dmCtrl")
 	luup.register_handler("incomingData", "dmData")
 	luup.register_handler("incomingList", "dmList")
 
-	-- Prepare the worker "thread"
-	historyNextHour = (math.floor(os.time() / 3600) + 1) * 3600
-
-	if(stateInitialised == true) then
-		luup.call_delay('doWork', 40, "")
-	end
-
 	-- There's still a few more housekeeping tasks to do
 	-- but let's return from here and finish up shortly
 	luup.call_delay('deferredStartup', 15, "")
-
 
 	-- Startup is done.
 	luup.log(DATAMINE_LOG_NAME .. "Startup complete")
@@ -631,6 +630,10 @@ function removeOldVersion()
 	-- Delete files from previous version of dataMine (ie jqWidgets)
 	os.execute("rm -rf /www/dm/app/")
 	os.execute("rm -rf /www/dm/jqwidgets/")
+
+	os.execute("rm /www/dm/images/calendar_view_day.png")
+	os.execute("rm /www/dm/images/calendar_view_week.png")
+	os.execute("rm /www/dm/images/calendar_view_month.png")
 end
 
 -- Delete backup config files
@@ -679,7 +682,7 @@ function cleanConfigBackup()
 		end
 	end
 
-	luup.log(DATAMINE_LOG_NAME.."Delete backups done - deleted ".. deleted .." of "..total.. " files")
+	luup.log(DATAMINE_LOG_NAME.."Delete backups complete - deleted ".. deleted .." of "..total.. " files")
 end
 
 function getLastRecord(Channel, Last)
@@ -809,8 +812,6 @@ function checkMount()
 	if(string.sub(dirMP,-1,-1) == '/') then
 		dirMP = string.sub(dataDir, 1, -2)
 	end
-
-	luup.log(DATAMINE_LOG_NAME .. dirMP)
 
 	os.execute("mount | grep "..dirMP.." > "..tmpFilename)
 	local fTmp=io.open(tmpFilename,"r")
@@ -1146,6 +1147,8 @@ function incomingCtrl(lul_request, lul_parameters, lul_outputformat)
 		return controlResetEvents()
 	elseif(control == "appConfigSet") then						-- Return UUID information from blkid
 		return setAppConfig(lul_parameters)
+	elseif(control == "version") then							-- Return version information
+		return "{'luaversion':'"..dmLuaVersion.."'}"
 	elseif(control == "debug") then							-- Return debug information
 		return dumpDebug()
 	end
@@ -1263,6 +1266,7 @@ luup.log(DATAMINE_LOG_NAME.."Save Graph - name "..lul_parameters.name)
 	newTable.Name      = lul_parameters.name
 	newTable.Reference = lul_parameters.ref
 	newTable.Icon      = tonumber(lul_parameters.icon)
+	newTable.Events    = tonumber(lul_parameters.events)
 
 --	luup.log(DATAMINE_LOG_NAME .. "controlSaveGraph: " .. json.encode(newTable))
 
@@ -1587,6 +1591,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 	local TotalPoints = 0
 	local first
 	local WeekNum
+	local WeekEnd
 	local logfile
 	local inf
 	local line
@@ -1601,6 +1606,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 	local logLastVal
 	local errNum = 0
 	local Lengthen
+	local LineCnt
 
 
 	lul_html = '{"series":['
@@ -1649,36 +1655,36 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 
 --			luup.log(DATAMINE_LOG_NAME .. "ID: "..Channel.." Start: " .. Start .. " Stop: " .. Stop .. " Sample: " .. Sample1)
 
-			if(Sample1 > 43200) then
-				WeekNum  = math.floor(Start / LOGTIME_DAILY)
-				nextTime = math.floor(Stop  / LOGTIME_DAILY)
-				dataType = "D"
-			elseif(Sample1 > 1800) then
-				WeekNum  = math.floor(Start / LOGTIME_HOURLY)
-				nextTime = math.floor(Stop  / LOGTIME_HOURLY)
-				dataType = "H"
-			else
+--			if(Sample1 > 43200) then
+--				WeekNum  = math.floor(Start / LOGTIME_DAILY)
+--				WeekEnd  = math.floor(Stop  / LOGTIME_DAILY)
+--				dataType = "D"
+--			elseif(Sample1 > 1800) then
+--				WeekNum  = math.floor(Start / LOGTIME_HOURLY)
+--				WeekEnd  = math.floor(Stop  / LOGTIME_HOURLY)
+--				dataType = "H"
+--			else
 				-- Needs something in here to NOT sub sample light switch data - at least at a reduced sample!
 				if(Lengthen == 1) then
 					Sample1 = 1
 				end
 				WeekNum  = math.floor(Start / LOGTIME_RAW)
-				nextTime = math.floor(Stop  / LOGTIME_RAW)
+				WeekEnd  = math.floor(Stop  / LOGTIME_RAW)
 				dataType = "R"
-			end
+--			end
 
 			Sample2 = Sample1 * 5
 
 			-- Find the first record after the start time
 			repeat
 				logfile = dataDir .. configData.Variables[Channel].Archive .. " ["..dataType..WeekNum.."].txt"
-		--		luup.log(DATAMINE_LOG_NAME .. "Trying " .. logfile)
+				--luup.log(DATAMINE_LOG_NAME .. "Trying 1:" .. logfile)
 				inf = io.open(logfile, 'r')
 				if(inf ~= nil) then
 					break
 				end
 				WeekNum = WeekNum + 1
-			until WeekNum > nextTime
+			until WeekNum > WeekEnd
 
 			Points      = 0
 			TotalPoints = 0
@@ -1687,6 +1693,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 			nextTime    = Start
 			minVal      =  9999999999
 			maxVal      = -9999999999
+			LineCnt     = 1
 
 
 			lastVal  = configData.Variables[Channel].LastVal
@@ -1714,6 +1721,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 				while true do
 					if os.clock() > timeoutTime then
 						errNum = 1
+				--luup.log(DATAMINE_LOG_NAME .. "Timeout!!!")
 						break
 					end
 
@@ -1722,14 +1730,18 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 						-- Close current file
 						inf:close()
 
-						-- Need to open the next weekly file
-						WeekNum = WeekNum+1
-						logfile = dataDir .. configData.Variables[Channel].Archive .. " ["..dataType..WeekNum.."].txt"
+						repeat
+							WeekNum = WeekNum + 1
+							logfile = dataDir .. configData.Variables[Channel].Archive .. " ["..dataType..WeekNum.."].txt"
+							luup.log(DATAMINE_LOG_NAME .. "Trying 2:" .. logfile)
+							inf = io.open(logfile, 'r')
+							if(inf ~= nil) then
+								break
+							end
+						until WeekNum > WeekEnd
 
-						-- Open the file
-						inf = io.open(logfile, 'r')
 						if(inf == nil) then
-							--luup.log(DATAMINE_LOG_NAME .. "2:Unable to open file for read - " .. logfile)
+							luup.log(DATAMINE_LOG_NAME .. "2:Unable to open file for read - " .. logfile)
 							break
 						end
 
@@ -1738,12 +1750,14 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 						if(line == nil) then
 							break
 						end
+
+						LineCnt = 1
 					end
 
 					local startp,endp = string.find(line,",",1)
 
 					if(startp == nil) then
-						luup.log(DATAMINE_LOG_NAME .. "Error reading CSV >> " .. line .. "<<");
+--						luup.log(DATAMINE_LOG_NAME .. "Error reading CSV >> " .. line .. "<<");
 						break;
 					end
 
@@ -1762,12 +1776,19 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 					end
 
 					if(l_time == nil or l_val == nil) then
-						break
+						luup.log(DATAMINE_LOG_NAME .. "Corrupt line in file "..logfile.." at line ".. LineCnt)
+						--break
+						-- Mark this entry as invalid
+						l_time = 0
+						l_val  = 0
 					end
 
 					if(l_time > Stop) then
+--						luup.log(DATAMINE_LOG_NAME .. "Err stop ".. l_time .."   "..Stop)
 						break
 					end
+
+--	luup.log(DATAMINE_LOG_NAME .. "data ".. l_time .."   "..l_val)
 
 					-- SLIGHT BODGE - makes sure zero changes are recorded
 --					if(lastVal ~= 0 and l_val == 0) then
@@ -1775,21 +1796,55 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 --					end
 
 					if(l_time >= nextTime) then
-						if(logLastTime < l_time - (Sample2) and first == 0) then
---							lul_html = lul_html .. ","
+--						luup.log(DATAMINE_LOG_NAME .. l_time .. "  ".. l_val)
+						if(first == 0) then
+--	luup.log(DATAMINE_LOG_NAME .. "First 0")
+--							if(logLastTime < l_time - (Sample2)) then
+								-- Since we only log changes, we need to assume that the data was
+								-- constant between changes. Therefore, to avoid incorrect graphs
+								-- we need to add another plot if the time between points is too long.
+--								if(Lengthen == 1) then
+--	luup.log(DATAMINE_LOG_NAME .. "Lengthen 1 - ", lastTime)
+--									table.insert(output, "["..lastTime.."000,"..lastVal.."]")
+--									Points = Points+1
+--								elseif(logLastVal == 0) then
+--									lul_html = lul_html .. "["..lastTime.."000,0],"
+--									Points = Points+1
+--								end
+--	luup.log(DATAMINE_LOG_NAME .. "Insert 1 - ", logLastTime)
+--								table.insert(output, "["..logLastTime.."000,"..logLastVal.."]")
+--								Points = Points+1
+--							end
 
 							-- Since we only log changes, we need to assume that the data was
 							-- constant between changes. Therefore, to avoid incorrect graphs
 							-- we need to add another plot if the time between points is too long.
 							if(Lengthen == 1) then
-								table.insert(output, "["..lastTime.."000,"..lastVal.."]")
+--	luup.log(DATAMINE_LOG_NAME .. "Lengthen 1, First 0")
+								table.insert(output, "["..l_time.."000,"..lastVal.."]")
 								Points = Points+1
---							elseif(logLastVal == 0) then
---								lul_html = lul_html .. "["..lastTime.."000,0],"
+--							elseif(lastVal == 0) then
+--								lul_html = lul_html .. "["..l_time.."000,0],"
 --								Points = Points+1
 							end
-							table.insert(output, "["..logLastTime.."000,"..logLastVal.."]")
-							Points = Points+1
+						else
+							if(lastVal ~= INVALID_VALUE) then
+--	luup.log(DATAMINE_LOG_NAME .. "~ INVALID")
+								minVal = lastVal
+								maxVal = lastVal
+
+								table.insert(output, "["..Start.."000,"..lastVal.."]")
+								Points = 1
+
+								if(Lengthen == 1) then
+--	luup.log(DATAMINE_LOG_NAME .. "~  INVALID lengthen")
+									table.insert(output, "["..l_time.."000,"..lastVal.."]")
+									Points = 2
+								end
+							else
+								Start = l_time
+							end
+							first = 0
 						end
 
 						-- Keep track of max and min values
@@ -1800,33 +1855,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 							maxVal = l_val
 						end
 
---				luup.log(DATAMINE_LOG_NAME .. l_time .. "  ".. l_val)
-						if(first == 0) then
-							-- Since we only log changes, we need to assume that the data was
-							-- constant between changes. Therefore, to avoid incorrect graphs
-							-- we need to add another plot if the time between points is too long.
-							if(Lengthen == 1) then
-								table.insert(output, "["..l_time.."000,"..lastVal.."]")
-								Points = Points+1
---							elseif(lastVal == 0) then
---								lul_html = lul_html .. "["..l_time.."000,0],"
---								Points = Points+1
-							end
-						else
-							if(lastVal ~= INVALID_VALUE) then
-								table.insert(output, "["..Start.."000,"..lastVal.."]")
-								Points = 1
-
-								if(Lengthen == 1) then
-									table.insert(output, "["..l_time.."000,"..lastVal.."]")
-									Points = 2
-								end
-							else
-								Start = l_time
-							end
-							first = 0
-						end
-
+--	luup.log(DATAMINE_LOG_NAME .. "Insert 2 - ", l_time)
 						table.insert(output, "["..l_time.."000,"..l_val.."]")
 						Points = Points+1
 
@@ -1842,11 +1871,16 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 						-- Required here to get the correct start datapoint
 						lastTime = l_time
 						lastVal  = l_val
-					else
+					elseif(l_time ~= 0) then
 						TotalPoints = TotalPoints + 1
 					end
-					logLastTime = l_time
-					logLastVal  = l_val
+
+					LineCnt = LineCnt + 1
+
+					if(l_time ~= 0) then
+						logLastTime = l_time
+						logLastVal  = l_val
+					end
 				end
 
 				if(inf ~= nil) then
@@ -1858,10 +1892,10 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 	--		if(configData.Variables[Channel].Type == 1) then
 				-- If there were no points to display, then we need to add a start point!
 				if(Points == 0) then
-					table.insert(output, "["..Start.."000,"..lastVal.."]")
+					table.insert(output, "["..Start.."000,"..logLastVal.."]")
 					Points = 1
 				end
-				table.insert(output, "["..Stop.."000,"..lastVal.."]")
+				table.insert(output, "["..Stop.."000,"..logLastVal.."]")
 				Points   = Points+1
 				lastTime = Stop
 	--		end
@@ -2003,7 +2037,7 @@ function dumpDebug()
 end
 
 function getSysInfo()
-	local code, res = luup.inet.wget("http://127.0.0.1/cgi-bin/cmh/sysinfo.sh", 3, "", "")
+	local code, res = luup.inet.wget("http://127.0.0.1/cgi-bin/cmh/sysinfo.sh", 5, "", "")
 	if(code == -1) then
 luup.log(DATAMINE_LOG_NAME.."SysInfo err")
 		return
@@ -2017,6 +2051,8 @@ function doEvents()
 	local before
 	local updConfig
 	local count = 1
+
+luup.log(DATAMINE_LOG_NAME.."Events = "..configData.Events.next)
 
 	if(configData.Events.last == 0) then
 		-- intialise the system by getting the first ever record
