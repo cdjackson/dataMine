@@ -94,6 +94,8 @@ var lastLoadTime;
 
 var reloadTime = 0;
 
+var guiVersion = '0.973';
+var luaVersion;
 var veraUnits;
 var veraServer = "";
 var veraNotifications;
@@ -106,6 +108,7 @@ var USBConfigOnce = false;
 
 var initList = [
 //    {type:0, name:"Vera device location", variable:"veraUnits", url:"http://sta1.mios.com/locator_json.php", fatal:true, notify:"Unable to find Vera"},
+    {type:0, name:"dataMine Lua Version", variable:"luaVersion", url:"/data_request?id=lr_dmCtrl&control=version", fatal:true, notify:"Unable to download version data from Vera"},
     {type:0, name:"Vera configuration", variable:"configVera", url:"/data_request?id=user_data", fatal:true, notify:"Unable to download configuration data from Vera"},
     {type:0, name:"dataMine app configuration", variable:"appConfig", url:"/data_request?id=lr_dmCtrl&control=appConfigGet", fatal:true, notify:"Unable to download app configuration data from dataMine"},
     {type:0, name:"dataMine channel configuration", variable:"configChan", url:"/data_request?id=lr_dmList", fatal:true, notify:"Unable to download channel configuration data from dataMine"},
@@ -170,6 +173,11 @@ function loadNextConfig() {
             }
 
             window[initList[initState].variable] = Ext.decode(response.responseText);
+
+            if(luaVersion != null) {
+                Ext.fly('luaVersion').update(luaVersion.luaversion, false);
+                Ext.fly('guiVersion').update(guiVersion, false);
+            }
 
             //           if(initState == 0) {
             //               if (window.deviceApp == 1) {
@@ -739,7 +747,7 @@ function doUSBConfig() {
                 queryMode:'local',
                 forceSelection:true,
                 editable:false,
-                typeAhead:true,
+                typeAhead:false,
                 queryMode:'local',
                 emptyText:'Select USB Drive'
             }
@@ -818,6 +826,7 @@ function doUSBConfig() {
         layout:'fit',
         draggable:false,
         resizable:false,
+        closable:false,
         modal:true,
         items:form
     }).show();

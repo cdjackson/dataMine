@@ -101,7 +101,8 @@ function createEnergyCategoryGraph() {
         },
         plotOptions:{
             pie:{
-                shadow:false
+                shadow:false,
+                center:['50%', '50%']
             }
         },
         tooltip:{
@@ -110,22 +111,34 @@ function createEnergyCategoryGraph() {
             }
         },
         series:[
-            {
+            {   // Inner
                 name:'Categories',
                 data:categoryData,
-                size:'60%',
+                size:'50%',
                 dataLabels:{
                     formatter:function () {
                         return this.y > 5 ? this.point.name : null;
                     },
                     color:'white',
                     distance:-30
-                }
+                }//,
+//                point:{
+//                    events:{
+//                        click:function (e) {
+                            //this.slice();
+//                            console.log(e);
+//                            console.log("name: " + e.point.options.name);
+//                            console.log("value: " + e.point.options.y);
+//                            e.preventDefault();
+//                        }
+//                    }
+//                }
             },
-            {
+            {   // Outer
                 name:'Devices',
                 data:deviceData,
-                innerSize:'60%',
+                size:'70%',
+                innerSize:'50%',
                 dataLabels:{
                     formatter:function () {
                         // display only if larger than 0
@@ -141,10 +154,25 @@ function createEnergyCategoryGraph() {
 
 //                        return this.y > 0 ? '<b>' + this.point.name + ':</b> ' + this.y + 'W' : null;
                     }
+                },
+                point:{
+                    events:{
+                        click:function (e) {
+                            //this.slice();
+//                            console.log(e);
+                            console.log("name: " + e.point.options.name);
+                            console.log("value: " + e.point.options.y);
+                            e.preventDefault();
+                        }
+                    }
                 }
             }
         ]
     });
+
+    var height = Ext.getCmp('dashEnergyDonut').getHeight();
+    var width = Ext.getCmp('dashEnergyDonut').getWidth();
+    energyChartUsageDonut.setSize(width, height);
 }
 
 function createEnergyHistory(Device)    //Type, Category, Device) {
@@ -463,8 +491,8 @@ Ext.define('DataMine.dashEnergyOverview', {
                             flex:1,
                             listeners:{
                                 resize:function (comp, width, height, oldWidth, oldHeight, eOpts) {
-                                    if (energyChartUsageDonut != null) {
-                                        energyChartUsageDonut.setSize(width, height);
+                                    if (energyChartUsageHistory != null) {
+                                        energyChartUsageHistory.setSize(width, height);
                                     }
                                 }
                             }

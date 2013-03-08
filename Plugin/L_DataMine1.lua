@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.973.6"
+local dmLuaVersion = "0.973"
 
 local mountLocal = ""
 
@@ -594,7 +594,6 @@ function initialise(lul_device)
 	if(configData.Events == nil) then
 		configData.Events       = {}
 		configData.Events.last  = 0
-		configData.Events.next  = 0
 		configData.Events.count = 0
 	end
 
@@ -1075,12 +1074,12 @@ function setAppConfig(lul_parameters)
 	if(lul_parameters.SetMountUUID ~= nil) then
 		luup.variable_set(SERVICE_ID, "SetMountUUID", lul_parameters.SetMountUUID, lul_device)
 	end
-	if(lul_parameters.SetDataDirectory ~= nil) then
-		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetMountUUID, lul_device)
-	end
-	if(lul_parameters.SetManualMount ~= nil) then
-		luup.variable_set(SERVICE_ID, "SetManualMount", lul_parameters.SetMountUUID, lul_device)
-	end
+--	if(lul_parameters.SetDataDirectory ~= nil) then
+--		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetMountUUID, lul_device)
+--	end
+--	if(lul_parameters.SetManualMount ~= nil) then
+--		luup.variable_set(SERVICE_ID, "SetManualMount", lul_parameters.SetMountUUID, lul_device)
+--	end
 
 	return "Ok"
 end
@@ -1145,7 +1144,7 @@ function incomingCtrl(lul_request, lul_parameters, lul_outputformat)
 		return getAppConfig()
 	elseif(control == "resetEvents") then						-- Reset the events list
 		return controlResetEvents()
-	elseif(control == "appConfigSet") then						-- Return UUID information from blkid
+	elseif(control == "appConfigSet") then						-- Save UUID information from blkid
 		return setAppConfig(lul_parameters)
 	elseif(control == "version") then							-- Return version information
 		return "{'luaversion':'"..dmLuaVersion.."'}"
@@ -2051,25 +2050,16 @@ function doEvents()
 	local before
 	local updConfig
 	local count = 1
+	local newWeek
+	local WeekNum
+	local outf
 
-luup.log(DATAMINE_LOG_NAME.."Events = "..configData.Events.next)
+luup.log(DATAMINE_LOG_NAME.."Events = "..configData.Events.last)
 
-	if(configData.Events.last == 0) then
-		-- intialise the system by getting the first ever record
-		count  = 1
-		after  = 0
-		before = os.time()
-	else
-		-- Get more records - up to the end of the week
-		after  = configData.Events.next + 1
-		before = math.floor(after / LOGTIME_RAW) * LOGTIME_RAW + LOGTIME_RAW
-		count  = 100
-	end
+	before = os.time()
+	after  = configData.Events.last + 1
+	count  = 100
 
-	-- Make sure we don't ramp off into the future!
-	if(before > os.time()) then
-		before = os.time()
-	end
 
 	local lul_cmd = 'https://' .. sysInfo.evtserver .. '/list_alerts?hwkey=' .. sysInfo.hwkey .. '&gateway=' .. sysInfo.installation_number..'&count='.. count ..'&unread=0&after='.. after ..'&before=' .. before
 luup.log(DATAMINE_LOG_NAME..lul_cmd)
@@ -2086,36 +2076,8 @@ luup.log(DATAMINE_LOG_NAME.."Events json=null")
 		return false
 	end
 
-	-- Detect if this was our initialisation request
-	if(count == 1) then
-		-- Do this to stop file being generated for week 0
-		if(eventList.records[1] == nil) then
-			luup.log(DATAMINE_LOG_NAME.."No Events!!!")
-			return false
-		end
 
-		configData.Events.last = tonumber(eventList.records[1].timestamp)
-		configData.Events.next = tonumber(eventList.records[1].timestamp)
-
-	luup.log(DATAMINE_LOG_NAME.."Event #1 found!!!")
-
-		return true
-	end
-
-	-- Open the logfile
-	local WeekNum = math.floor(after / LOGTIME_RAW)
-	local logfile = dataDir .. "Notifications [R" .. WeekNum .. "].txt"
-	outf = io.open(logfile, 'a')
-	if(outf == nil) then
-		luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
-		return false
-	end
-
-	-- Set the time to the most recent we requested.
-	-- This is so if nothing is returned, we step past a week boundary.
-	-- It will be overwritten below if there is data returned.
-	configData.Events.next = before
-
+	WeekNum = 0
 	for k,v in pairs (eventList.records) do
 		local newEvt = {}
 		newEvt.id           = tonumber(v.id)
@@ -2128,17 +2090,35 @@ luup.log(DATAMINE_LOG_NAME.."Events json=null")
 		newEvt.value        = v.value
 		newEvt.description  = v.description
 
-		configData.Events.last  = tonumber(v.timestamp)
-		configData.Events.next  = tonumber(v.timestamp)
-		configData.Events.count = configData.Events.count + 1
+		newWeek = math.floor(newEvt.timestamp / LOGTIME_RAW)
+		if(newWeek ~= WeekNum) then
+			WeekNum = newWeek
+
+			if(outf ~= nil) then
+				outf:close()
+			end
+
+			-- Open the logfile
+			local logfile = dataDir .. "Notifications [R" .. WeekNum .. "].txt"
+			outf = io.open(logfile, 'a')
+			if(outf == nil) then
+				luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
+				return false
+			end
+		end
 
 		outf:write(json.encode(newEvt) .. ',\n')
+
+		configData.Events.last  = tonumber(v.timestamp)
+		configData.Events.count = configData.Events.count + 1
 
 		updConfig = 1
 	end
 
 	-- Close the output file
-	outf:close()
+	if(outf ~= nil) then
+		outf:close()
+	end
 
 	if(updConfig == 1) then
 
@@ -2153,7 +2133,7 @@ end
 
 function controlResetEvents()
 	configData.Events.last  = 0
-	configData.Events.next  = 0
+	configData.Events.next  = nil
 	configData.Events.count = 0
 
 	-- Delete all Notification files
