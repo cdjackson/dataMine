@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.973"
+local dmLuaVersion = "0.974"
 
 local mountLocal = ""
 
@@ -51,7 +51,11 @@ local sysInfo = nil
 local errorStatus = false
 local errorCount  = 0
 local stateInitialised = false
+local loadBackup = 1
 
+local dayNightEvent
+local dayNightState
+local dayNightLast = 0
 
 local mountLocation = ""
 local mountType     = ""
@@ -302,6 +306,14 @@ function initialise(lul_device)
 		historyEnabled = 0
 --	end
 
+	-- Is auto backup revert enabled?
+	loadBackup = luup.variable_get(SERVICE_ID, "SetUseBackup", lul_device)
+	if(loadBackup == nil) then
+		loadBackup = 1
+		luup.variable_set(SERVICE_ID, "SetUseBackup", loadBackup, lul_device)
+	end
+	loadBackup = tonumber(loadBackup)
+
 	-- Are notifications enabled?
 	eventsEnabled = luup.variable_get(SERVICE_ID, "SetEventsEnable", lul_device)
 	if(eventsEnabled == nil) then
@@ -349,6 +361,11 @@ function initialise(lul_device)
 
 		-- Is the storage device mounted
 		if(mountLocation ~= mountPoint) then
+			if(mountLocation ~= "") then
+				-- The USB appears to be mounted, but not to the same location that it is now mapped to
+				luup.log(DATAMINE_LOG_NAME.."Mount point error - umount: ".. mountLocation.."::"..mountPoint)
+				os.execute("umount "..dataDir)
+			end
 			luup.task("Mounting dataMine storage device ("..mountPoint..")", 2, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), -1)
 			luup.log(DATAMINE_LOG_NAME.."Mounting dataMine storage ("..mountPoint..") to ("..dataDir..")")
 
@@ -386,14 +403,13 @@ function initialise(lul_device)
 		end
 	end
 
-
-	local logfile = dataDir .. DATAMINE_CONFIG
-
 	-- Remember the time we started. This can be used in the GUI to interpret a restart of the server
 	loadTime = os.time()
 
 	ChannelCnt = 0
 	ChannelRec = 0
+
+	local configUpdated = false
 
 	-- Load the JSON library
 	json = require(jsonLib)
@@ -402,170 +418,27 @@ function initialise(lul_device)
 		luup.log(DATAMINE_LOG_NAME .. "ERROR: Startup state is 'uninitialised'!")
 	else
 		-- If we make changes, we will need to save the configuration
-		local configUpdated = false
+		local configFile = dataDir .. DATAMINE_CONFIG
 
 		-- Load the configuration file
-		local inf = io.open(logfile, 'r')
-		if(inf == nil) then
-			luup.log(DATAMINE_LOG_NAME .. "ERROR: Unable to open config file for read :: " .. logfile)
-		else
-			local line = inf:read("*all")
+		configUpdated = loadConfigFile(configFile)
 
-			if(line == nil) then
-				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file read failed")
-				configData = nil
-			elseif(string.len(line) == 0) then
-				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file was zero length")
-				configData = nil
+		if(configData == nil) then
+			configFile = getLastConfigBackup()
+			if(loadBackup == 0) then
+				luup.log(DATAMINE_LOG_NAME .. "Primary config file load failed. No auto revert to backup file '"..configFile.."'")
 			else
-				-- workaround for newer JSON library!
-				string.gsub(line, "%[%]", "%[{}%]")
-
-				--luup.log(DATAMINE_LOG_NAME .. "CONFIG: " .. line)
-
-				configData = json.decode(line)
-				if(configData == nil) then
-					luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded")
-				elseif(configData.Variables == nil) then
-					luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded - no variables")
+				if(configFile ~= nil) then
+					luup.log(DATAMINE_LOG_NAME .. "Primary config file load failed. Resorting to backup '"..configFile.."'")
+					configUpdated = loadConfigFile(configFile)
 				else
-					-- Make sure the reference counter is initialised
-					if(configData.nextId == nil) then
-						configData.nextId = 1
-						configUpdated = true
-					end
-
-					if(configData.LastWrite == nil) then
-						configData.LastWrite = 0
-					end
-
-					for k,v in pairs (configData.Variables) do
-						v.Device = tonumber(v.Device)
-
-						if(v.Id == nil) then
-							v.Id = configData.nextId
-							configData.nextId = configData.nextId + 1
-							configUpdated = true
-						end
-
-						ChannelCnt = ChannelCnt + 1
-						if(v.LastRec == nil) then
-							v.LastRec = 0
-						end
-
-						if(v.LastVal == nil) then
-							v.LastVal = 0
-						end
-
-						if(v.DataType == nil) then
-							v.DataType = getDataType(v)
-							configUpdated = true
-						elseif(v.DataType == 0) then
-							v.DataType = getDataType(v)
-							configUpdated = true
-						end
-
-						if(v.Units == nil) then
-							v.Units = getUnits(v)
-							configUpdated = true
-						end
-
-						if(v.DrowsyWarning == nil) then
-							v.DrowsyWarning = 0
-						end
-						if(v.DrowsyError == nil) then
-							v.DrowsyError = 0
-						end
-						if(v.DataOffset == nil) then
-							v.DataOffset = 0
-						end
-
-
-						if(v.Alpha == 1) then
-							if(type(v.Lookup) ~= "table") then
-								v.Alpha = 0
-							end
-						end
-
-						if(v.Alpha == 0 or v.Alpha == nil) then
-							v.Lookup = nil
-						end
-						local LastValue = luup.variable_get(v.Service, v.Variable, v.Device)
-						if(LastValue == nil) then
-							v.Ghost = true
-						else
-							-- Get the time and value of the last record we have logged
-							local LastRecTime, LastRecVal = getLastRecord(v, configData.LastWrite)
-
-							LastRecTime = tonumber(LastRecTime)
-							if(tonumber(LastRecValue) ~= nul) then
-								LastRecValue = tonumber(LastRecValue)
-							end
-
-							if(LastRecTime ~= v.LastRec) then
-								v.LastRec = LastRecTime
-								configUpdated = true
-							end
-
-							-- If there was an updated "LastValue" from the log, then use it
-							if(LastRecValue ~= v.LastVal and LastRecValue ~= nil) then
-								v.LastVal = LastRecValue
-							end
-
-							-- See if it will convert to a number
-							if(tonumber(LastValue) ~= nil) then
-								LastValue = tonumber(LastValue)
-							end
-
-							if(v.LastVal ~= LastValue) then
-								-- Vera thinks the value is different than we last logged, so let's get this updated
-								-- This could happen if a change occurred when dataMine was starting
-								luup.log(DATAMINE_LOG_NAME.."D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."] newVal on startup is "..LastValue.." was "..v.LastVal)
-								watchVariable(v.Device, v.Service, v.Variable, v.LastVal, LastValue)
-							end
-
-							v.LastVal = LastValue
-							v.Ghost = false
-						end
-
-						v.Type = tonumber(v.Type)
-
-						if(v.Logging == 1 and v.Ghost == false) then
-							ChannelRec = ChannelRec + 1
-							luup.variable_watch('watchVariable', v.Service, v.Variable, v.Device)
-							luup.log(DATAMINE_LOG_NAME.."Watching: D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."]")
-							if(v.LastHistory == nil) then
-								v.LastHistory = FIRST_YEAR
-							end
-						end
-
-						-- ***************************************************************************
-						-- ***************************************************************************
-						-- ***************************************************************************
-						-- ***************************************************************************
-						-- History......
-						if(historyEnabled == 1) then
-							if(v.Alpha == 1) then
-	--							luup.log(DATAMINE_LOG_NAME.."History STOP")
-								v.historyState = HISTORYSTATE_STOP
-							elseif(v.FirstRec == 0) then
-	--							luup.log(DATAMINE_LOG_NAME.."History INIT")
-								v.historyState = HISTORYSTATE_INIT
-							else
-	--							luup.log(DATAMINE_LOG_NAME.."History STARTUP")
-								v.historyState = HISTORYSTATE_STARTUP
-							end
-						else
-	--						luup.log(DATAMINE_LOG_NAME.."History STOP")
-							v.historyState = HISTORYSTATE_STOP
-						end
-					end
+					luup.log(DATAMINE_LOG_NAME .. "Primary config file load failed. No backup file found!")
 				end
 			end
 		end
 
 		-- Retreive the Vera system information data
-		getSysInfo()
+--		getSysInfo()
 
 		-- Prepare the worker "thread"
 		historyNextHour = (math.floor(os.time() / 3600) + 1) * 3600
@@ -596,6 +469,15 @@ function initialise(lul_device)
 		configData.Events.last  = 0
 		configData.Events.count = 0
 	end
+
+	-- Keep track of sunrise / sunset
+	dayNightState = luup.is_night()
+	if(dayNightState == true) then
+		dayNightEvent = luup.sunrise()
+	else
+		dayNightEvent = luup.sunset()
+	end
+
 
 	-- Keep a reference of the SW version used to save this config
 	configData.Version = dmLuaVersion
@@ -635,8 +517,174 @@ function removeOldVersion()
 	os.execute("rm /www/dm/images/calendar_view_month.png")
 end
 
--- Delete backup config files
-function cleanConfigBackup()
+function loadConfigFile(filename)
+	local configUpdated = false
+	local inf = io.open(filename, 'r')
+	if(inf == nil) then
+		luup.log(DATAMINE_LOG_NAME .. "ERROR: Unable to open config file for read :: " .. filename)
+		configData = nil
+	else
+		local line = inf:read("*all")
+
+		if(line == nil) then
+			luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file read failed")
+			configData = nil
+		elseif(string.len(line) == 0) then
+			luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file was zero length")
+			configData = nil
+		else
+			-- workaround for newer JSON library!
+			string.gsub(line, "%[%]", "%[{}%]")
+
+			--luup.log(DATAMINE_LOG_NAME .. "CONFIG: " .. line)
+
+			configData = json.decode(line)
+			if(configData == nil) then
+				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded")
+			elseif(configData.Variables == nil) then
+				luup.log(DATAMINE_LOG_NAME .. "ERROR: Config file not decoded - no variables")
+				configData = nil
+			else
+				-- Make sure the reference counter is initialised
+				if(configData.nextId == nil) then
+					configData.nextId = 1
+					configUpdated = true
+				end
+
+				if(configData.LastWrite == nil) then
+					configData.LastWrite = 0
+				end
+
+				for k,v in pairs (configData.Variables) do
+					v.Device = tonumber(v.Device)
+
+					if(v.Id == nil) then
+						v.Id = configData.nextId
+						configData.nextId = configData.nextId + 1
+						configUpdated = true
+					end
+
+					ChannelCnt = ChannelCnt + 1
+					if(v.LastRec == nil) then
+						v.LastRec = 0
+					end
+
+					if(v.LastVal == nil) then
+						v.LastVal = 0
+					end
+
+					if(v.DataType == nil) then
+						v.DataType = getDataType(v)
+						configUpdated = true
+					elseif(v.DataType == 0) then
+						v.DataType = getDataType(v)
+						configUpdated = true
+					end
+
+					if(v.Units == nil) then
+						v.Units = getUnits(v)
+						configUpdated = true
+					end
+
+					if(v.DrowsyWarning == nil) then
+						v.DrowsyWarning = 0
+					end
+					if(v.DrowsyError == nil) then
+						v.DrowsyError = 0
+					end
+					if(v.DataOffset == nil) then
+						v.DataOffset = 0
+					end
+
+
+					if(v.Alpha == 1) then
+						if(type(v.Lookup) ~= "table") then
+							v.Alpha = 0
+						end
+					end
+
+					if(v.Alpha == 0 or v.Alpha == nil) then
+						v.Lookup = nil
+					end
+					local LastValue = luup.variable_get(v.Service, v.Variable, v.Device)
+					if(LastValue == nil) then
+						v.Ghost = true
+					else
+						-- Get the time and value of the last record we have logged
+						local LastRecTime, LastRecVal = getLastRecord(v, configData.LastWrite)
+
+						LastRecTime = tonumber(LastRecTime)
+						if(tonumber(LastRecValue) ~= nul) then
+							LastRecValue = tonumber(LastRecValue)
+						end
+
+						if(LastRecTime ~= v.LastRec) then
+							v.LastRec = LastRecTime
+							configUpdated = true
+						end
+
+						-- If there was an updated "LastValue" from the log, then use it
+						if(LastRecValue ~= v.LastVal and LastRecValue ~= nil) then
+							v.LastVal = LastRecValue
+						end
+
+						-- See if it will convert to a number
+						if(tonumber(LastValue) ~= nil) then
+							LastValue = tonumber(LastValue)
+						end
+
+						if(v.LastVal ~= LastValue) then
+							-- Vera thinks the value is different than we last logged, so let's get this updated
+							-- This could happen if a change occurred when dataMine was starting
+							luup.log(DATAMINE_LOG_NAME.."D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."] newVal on startup is "..LastValue.." was "..v.LastVal)
+							watchVariable(v.Device, v.Service, v.Variable, v.LastVal, LastValue)
+						end
+
+						v.LastVal = LastValue
+						v.Ghost = false
+					end
+
+					v.Type = tonumber(v.Type)
+
+					if(v.Logging == 1 and v.Ghost == false) then
+						ChannelRec = ChannelRec + 1
+						luup.variable_watch('watchVariable', v.Service, v.Variable, v.Device)
+						luup.log(DATAMINE_LOG_NAME.."Watching: D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."]")
+						if(v.LastHistory == nil) then
+							v.LastHistory = FIRST_YEAR
+						end
+					end
+
+					-- ***************************************************************************
+					-- ***************************************************************************
+					-- ***************************************************************************
+					-- ***************************************************************************
+					-- History......
+					if(historyEnabled == 1) then
+						if(v.Alpha == 1) then
+--							luup.log(DATAMINE_LOG_NAME.."History STOP")
+							v.historyState = HISTORYSTATE_STOP
+						elseif(v.FirstRec == 0) then
+--							luup.log(DATAMINE_LOG_NAME.."History INIT")
+							v.historyState = HISTORYSTATE_INIT
+						else
+--							luup.log(DATAMINE_LOG_NAME.."History STARTUP")
+							v.historyState = HISTORYSTATE_STARTUP
+						end
+					else
+--						luup.log(DATAMINE_LOG_NAME.."History STOP")
+						v.historyState = HISTORYSTATE_STOP
+					end
+				end
+			end
+		end
+	end
+
+	return configUpdated
+end
+
+-- Get the list of config backup files
+function getBackupFiles()
 	-- Get a directory list of all backup files
 	os.execute("ls "..dataDir.."*.backup > "..tmpFilename)
 
@@ -668,6 +716,16 @@ function cleanConfigBackup()
 	-- Get them into order - most recent first
 	table.sort(files, function(a,b) return a.time>b.time end)
 
+	return files
+end
+
+function cleanConfigBackup()
+	local files = getBackupFiles()
+	if(files == nil) then
+		luup.log(DATAMINE_LOG_NAME.."Delete backups complete - No files found")
+		return
+	end
+
 	local total   = 0
 	local deleted = 0
 	for k,v in pairs(files) do
@@ -683,6 +741,17 @@ function cleanConfigBackup()
 
 	luup.log(DATAMINE_LOG_NAME.."Delete backups complete - deleted ".. deleted .." of "..total.. " files")
 end
+
+-- Delete backup config files
+function getLastConfigBackup()
+	local files = getBackupFiles()
+	if(files == nil) then
+		return
+	end
+
+	return files[1].name
+end
+
 
 function getLastRecord(Channel, Last)
 	local logfile
@@ -1085,7 +1154,6 @@ function setAppConfig(lul_parameters)
 end
 
 
-
 -- Get dataMine variable configuration
 function incomingList(lul_request, lul_parameters, lul_outputformat)
 --	luup.log(DATAMINE_LOG_NAME .. "incomingList: " .. lul_request)
@@ -1122,6 +1190,8 @@ function incomingCtrl(lul_request, lul_parameters, lul_outputformat)
 		return processStatus(lul_parameters)
 	elseif(control == "events") then							-- Get the events list
 		return controlGetEvents(lul_parameters)
+	elseif(control == "sunrise") then							-- Get the sunrise list
+		return controlGetSunrise(lul_parameters)
 	elseif(control == "saveVar") then							-- Save variable properties
 		return controlSaveVariable(lul_parameters)
 	elseif(control == "delVar") then							-- Delete a variable
@@ -1173,7 +1243,7 @@ function processStatus(lul_parameters)
 			firstRec = 0
 		end
 	end
-	lul_html = lul_html .. '], "Events":{"last":'..configData.Events.last..',"count":'..configData.Events.count..'}, "System":{"Initialised":'.. tostring(stateInitialised) ..',"ErrorStatus":'.. tostring(errorStatus) ..',"ErrorCount":'.. errorCount ..'}}'
+	lul_html = lul_html .. '], "Events":{"last":'..configData.Events.last..',"count":'..configData.Events.count..'}, "System":{"Initialised":'.. tostring(stateInitialised) ..',"ErrorStatus":'.. tostring(errorStatus) ..',"ErrorCount":'.. errorCount ..'},"lastDayNight":'.. dayNightLast ..'}'
 
 	return lul_html
 end
@@ -1204,8 +1274,6 @@ function controlSaveGraph(lul_parameters)
 	local newTable = {}
 	newTable.Period   = 0
 	newTable.Channels = {}
-luup.log(DATAMINE_LOG_NAME.."Save Graph")
-luup.log(DATAMINE_LOG_NAME.."Save Graph - "..json.encode(configData.Graphs))
 
 	local chName
     local chCnt
@@ -1218,7 +1286,6 @@ luup.log(DATAMINE_LOG_NAME.."Save Graph - "..json.encode(configData.Graphs))
 		if(lul_parameters[chName] ~= nul) then
 			if(tonumber(lul_parameters[chName]) ~= 0) then
 				ChannelList[outCnt] = {}
-luup.log(DATAMINE_LOG_NAME.."Save Graph - ch"..tonumber(lul_parameters[chName]))
 
 				ChannelList[outCnt].chan = tonumber(lul_parameters[chName])
 
@@ -1260,8 +1327,6 @@ luup.log(DATAMINE_LOG_NAME.."Save Graph - ch"..tonumber(lul_parameters[chName]))
 		newTable.Period = 86400
 	end
 
-luup.log(DATAMINE_LOG_NAME.."Save Graph - name "..lul_parameters.name)
-
 	newTable.Name      = lul_parameters.name
 	newTable.Reference = lul_parameters.ref
 	newTable.Icon      = tonumber(lul_parameters.icon)
@@ -1279,14 +1344,12 @@ luup.log(DATAMINE_LOG_NAME.."Save Graph - name "..lul_parameters.name)
 	end
 
 	if(chCnt == 0) then
-luup.log(DATAMINE_LOG_NAME.."Save Graph - NOK-NOCHAN")
 		return "NOK-NOCHAN"
 	end
 
 	table.insert(configData.Graphs, newTable)
 
 	saveConfig(1)
-luup.log(DATAMINE_LOG_NAME.."Save Graph - "..json.encode(configData.Graphs))
 	return json.encode(configData.Graphs)
 end
 
@@ -1299,6 +1362,7 @@ end
 function controlGetGUIConfig()
 	return json.encode(configData.guiConfig)
 end
+
 
 -- Return variable types
 function processVarTypes()
@@ -1756,20 +1820,23 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 					local startp,endp = string.find(line,",",1)
 
 					if(startp == nil) then
---						luup.log(DATAMINE_LOG_NAME .. "Error reading CSV >> " .. line .. "<<");
-						break;
+						luup.log(DATAMINE_LOG_NAME .. "Error reading CSV >> " .. line .. "<<")
+
+						-- Set the line to 0,0 - it'll get rejected further down...
+						line = "0,0"
+						startp = 2
 					end
 
 					l_time = tonumber(string.sub(line,1,startp-1))
 					l_val  = string.sub(line,startp+1)
 					if(configData.Variables[Channel].Alpha == 1) then
-	--					luup.log(DATAMINE_LOG_NAME .. "Alpha = "..l_val)
+						luup.log(DATAMINE_LOG_NAME .. "Alpha = "..l_val)
 						l_val = configData.Variables[Channel].Lookup[l_val]
-	--					if(l_val ~= nil) then
-	--						luup.log(DATAMINE_LOG_NAME .. "Alpha = "..l_val)
-	--					else
-	--						luup.log(DATAMINE_LOG_NAME .. "Alpha = nil")
-	--					end
+						if(l_val == nil) then
+							l_val  = string.sub(line,startp+1)
+							luup.log(DATAMINE_LOG_NAME .. "Alpha lookup failed = "..l_val)
+							l_val = tonumber(l_val)
+						end
 					else
 						l_val  = tonumber(l_val)
 					end
@@ -1973,6 +2040,37 @@ workHistory = false		-- REMOVE THIS
 		workCount = workCount + 1
 	end
 
+	luup.log(DATAMINE_LOG_NAME.."is_night="..tostring(luup.is_night()).."  time="..os.time().."  next="..dayNightEvent)
+
+	-- Log sunrise / sunset times
+	if(luup.is_night() ~= dayNightState) then
+	luup.log(DATAMINE_LOG_NAME.."Sun EVENT!!!")
+		-- Remember the last event - for status update
+		dayNightLast = dayNightEvent
+
+		logfile = dataDir .. "sunriseSunset.txt"
+		local outf, err = io.open(logfile, 'a')
+		if(outf == nil) then
+			luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
+			luup.log(DATAMINE_LOG_NAME .. "Error: '" .. err .. "'")
+			errorStatus = true
+			errorCount = errorCount + 1
+		else
+			outf:write('{"time":' .. dayNightEvent .. ',"night":' .. tostring(luup.is_night()) .. '},\n')
+			outf:close()
+
+--			configData.lastSunEvent = configData.nextSunEvent
+		end
+
+		if(luup.is_night() == true) then
+			dayNightEvent = luup.sunrise()
+		else
+			dayNightEvent = luup.sunset()
+		end
+		dayNightState = luup.is_night()
+		luup.log(DATAMINE_LOG_NAME.."Next Sun EVENT is "..dayNightEvent)
+	end
+
 	local done = false
 	if(workHistory == true or workEvents == true) then
 		luup.call_delay('doWork', 3, "")
@@ -2035,15 +2133,15 @@ function dumpDebug()
 	return html
 end
 
-function getSysInfo()
-	local code, res = luup.inet.wget("http://127.0.0.1/cgi-bin/cmh/sysinfo.sh", 5, "", "")
-	if(code == -1) then
-luup.log(DATAMINE_LOG_NAME.."SysInfo err")
-		return
-	end
-	sysInfo = json.decode(res)
-luup.log(DATAMINE_LOG_NAME.."SysInfo Ok. "..sysInfo.hwkey)
-end
+--function getSysInfo()
+--	local code, res = luup.inet.wget("http://127.0.0.1/cgi-bin/cmh/sysinfo.sh", 5, "", "")
+--	if(code == -1) then
+--luup.log(DATAMINE_LOG_NAME.."SysInfo err")
+--		return
+--	end
+--	sysInfo = json.decode(res)
+--luup.log(DATAMINE_LOG_NAME.."SysInfo Ok. "..sysInfo.hwkey)
+--end
 
 function doEvents()
 	local after
@@ -2054,25 +2152,25 @@ function doEvents()
 	local WeekNum
 	local outf
 
-luup.log(DATAMINE_LOG_NAME.."Events = "..configData.Events.last)
+--luup.log(DATAMINE_LOG_NAME.."Events = "..configData.Events.last)
 
 	before = os.time()
 	after  = configData.Events.last + 1
 	count  = 100
 
 
-	local lul_cmd = 'https://' .. sysInfo.evtserver .. '/list_alerts?hwkey=' .. sysInfo.hwkey .. '&gateway=' .. sysInfo.installation_number..'&count='.. count ..'&unread=0&after='.. after ..'&before=' .. before
-luup.log(DATAMINE_LOG_NAME..lul_cmd)
+	local lul_cmd = 'https://' .. luup.event_server .. '/list_alerts?hwkey=' .. luup.hw_key .. '&gateway=' .. luup.pk_accesspoint ..'&count='.. count ..'&unread=0&after='.. after ..'&before=' .. before
+--luup.log(DATAMINE_LOG_NAME..lul_cmd)
 	local code, res = luup.inet.wget(lul_cmd, 25, "", "")
 	if(code == -1) then
-luup.log(DATAMINE_LOG_NAME.."Events Ret error -1")
+		luup.log(DATAMINE_LOG_NAME.."Events Ret error -1")
 		return false
 	end
-luup.log(DATAMINE_LOG_NAME..res)
+--luup.log(DATAMINE_LOG_NAME..res)
 
 	local eventList = json.decode(res)
 	if(eventList == nul) then
-luup.log(DATAMINE_LOG_NAME.."Events json=null")
+		luup.log(DATAMINE_LOG_NAME.."Events json=null")
 		return false
 	end
 
@@ -2121,9 +2219,6 @@ luup.log(DATAMINE_LOG_NAME.."Events json=null")
 	end
 
 	if(updConfig == 1) then
-
---	luup.log(DATAMINE_LOG_NAME.."Events updated!!!")
-
 		saveConfig(0)
 		return true
 	end
@@ -2219,6 +2314,32 @@ function controlGetEvents(lul_parameters)
 	until Start > Stop
 
 	Response = Response .. '{}],"procTime":'..os.clock() - procTime..',"last":'..configData.Events.last..',"count":'..configData.Events.count..'}'
+
+	return Response
+end
+
+function controlGetSunrise(lul_parameters)
+	local Start = tonumber(lul_parameters.start)
+	local Stop  = tonumber(lul_parameters.stop)
+
+	local procTime = os.clock()
+
+	local Response = '{"Sunrise":['
+
+	local logfile = dataDir .. "sunriseSunset.txt"
+	local inf = io.open(logfile, 'r')
+	if(inf ~= nil) then
+		-- Read the file
+		local data = inf:read("*all")
+		if(data ~= nil) then
+			-- Concatenate the data
+			Response = Response .. data
+		end
+
+		io.close(inf)
+	end
+
+	Response = Response .. '{}],"procTime":'..os.clock() - procTime..',"last":'..dayNightLast..'}'
 
 	return Response
 end

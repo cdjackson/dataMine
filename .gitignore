@@ -1,3 +1,5 @@
+.idea/
+
 #################
 ## Eclipse
 #################
@@ -161,3 +163,7 @@ pip-log.txt
 
 # Mac crap
 .DS_Store
+
+# LUA compiles
+.luac
+

@@ -7,11 +7,8 @@
 
 Ext.define('DataMine.dashboard', {
     extend:'Ext.panel.Panel',
-    layout:'border',
     xtype:'dmDash',
     id:'dashMain',
-    border:false,
-
     layout:'fit',
     items:[
         {

@@ -1,32 +1,34 @@
-<html xmlns="http://www.w3.org/1999/html">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
     <title>dataMine - graphing for Vera</title>
     <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
-    <link rel="stylesheet" type="text/css" href="extjs/resources/css/ext-all.css">
-    <link rel="stylesheet" type="text/css" href="dataMine.css">
-    <script type="text/javascript" src="extjs/ext.js"></script>
-    <script type="text/javascript" src="js/jquery.min.js"></script>
-    <script type="text/javascript" src="js/highcharts.js"></script>
-    <script type="text/javascript" src="js/highcharts-more.js"></script>
-    <script type="text/javascript" src="app-all.js"></script>
+    <link rel="stylesheet" type="text/css" href="extjs/resources/css/ext-all.css" />
+    <link rel="stylesheet" type="text/css" href="dataMine.css" />
+    <script type="text/javascript" src="extjs/ext.js" />
+    <script type="text/javascript" src="js/jquery.min.js" />
+    <script type="text/javascript" src="js/highcharts.js" />
+    <script type="text/javascript" src="js/highcharts-more.js" />
+    <script type="text/javascript" src="app-all.js" />
 </head>
 <body>
 <div id="dataMine">
 </div>
 <div id="splashscreen" class="splashscreen">
     <div style="display:block;position:absolute;width:99%;top:40%; text-align: center;">
-        <p id="loadingSpinner"><img src="images/loading.gif"></p>
+        <p id="loadingSpinner"><img src="images/loading.gif" alt="Loading..."/></p>
         <p id="loadingText" style="font-family:Verdana,Helvetica,sans-serif;font-size: 10px;">
             Loading <b><i>dataMine</i></b> web application for Vera
         </p>
-        <p style="font-family:Verdana,Helvetica,sans-serif;font-size: 10px;">GUI Version: <span id="guiVersion">---</span></span></p>
-        <p style="font-family:Verdana,Helvetica,sans-serif;font-size: 10px;">LUA Version: <span id="luaVersion">---</span></span></p>
     </div>
     <div style="display:block;position:absolute;width:99%;top:45%; text-align: center;">
         <p id="startWarning" style="display:none;font-family:Verdana,Helvetica,sans-serif;font-size: 10px;">
-            <span><img style="margin-top:-4px;" src="images/exclamation.png"></span><span id="warningText" style="margin-left: 4px; vertical-align: top;"></span>
+            <span><img style="margin-top:-4px;" src="images/exclamation.png" alt="Error..." /></span><span id="warningText" style="margin-left: 4px; vertical-align: top;"></span>
         </p>
     </div>
+    <p style="font-family:Verdana,Helvetica,sans-serif;font-size: 10px;">GUI Version: <span id="guiVersion">---</span></p>
+    <p style="font-family:Verdana,Helvetica,sans-serif;font-size: 10px;">LUA Version: <span id="luaVersion">---</span></p>
 </div>
 
 </body>

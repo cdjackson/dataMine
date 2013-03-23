@@ -15,6 +15,8 @@ var EVT_ALL = 2;
 var eventDisplay = EVT_NONE;
 var eventAxis = -1;
 
+var nightsDisplay = false;
+
 var graphInfoItems;
 
 var dataTypeArray = [
@@ -189,6 +191,7 @@ function toolbarEnable() {
     Ext.getCmp('chartTb-eventsNone').enable();
     Ext.getCmp('chartTb-eventsLink').enable();
     Ext.getCmp('chartTb-eventsAll').enable();
+    Ext.getCmp('chartTb-night').enable();
     Ext.getCmp('chartTb-info').enable();
 //        Ext.getCmp('chartTb-viewMonth').enable();
 }
@@ -287,6 +290,48 @@ function findNotification(id) {
             return veraNotifications.Events[listCnt];
     }
     return null;
+}
+
+// Generate the day/night plotbands
+function addNights(start, stop) {
+    chartOptions.xAxis.plotBands = [];
+
+    if(veraDayNight == null)
+        return;
+
+    var newBand = null;
+
+    for (var listCnt in veraDayNight.Sunrise) {
+        if(veraDayNight.Sunrise[listCnt].time == null)
+            continue;
+        if(veraDayNight.Sunrise[listCnt].time < start)
+            continue;
+        if(veraDayNight.Sunrise[listCnt].time > stop)
+            break;
+
+        if(veraDayNight.Sunrise[listCnt].night == true) {
+            newBand = {};
+            newBand.from = veraDayNight.Sunrise[listCnt].time * 1000;
+        }
+        else {
+            // If we've started in darkness, then start the band
+            if(newBand == null) {
+                newBand = {};
+                newBand.from = start * 1000;
+            }
+            newBand.to = veraDayNight.Sunrise[listCnt].time * 1000;
+            newBand.color = "#eeeeee";
+            chartOptions.xAxis.plotBands.push(newBand);
+            newBand = null;
+        }
+    }
+
+    // If we've ended in darkness, then close the band
+    if(newBand != null){
+        newBand.to = stop * 1000;
+        newBand.color = "#eeeeee";
+        chartOptions.xAxis.plotBands.push(newBand);
+    }
 }
 
 function saveGraphOption(name, value) {
@@ -531,13 +576,18 @@ function updateChart(channels, start, stop, newChart) {
 //                if (chartObject)
 //                    chartObject.hideLoading();
 
+                if(nightsDisplay)
+                    addNights(parms.start, parms.stop);
+                else
+                    options.xAxis.plotBands = null;
+
                 chartObject = new Highcharts.Chart(options);
             }
             if (json.min) {
                 chartMin = json.min;
                 chartMax = json.max;
 
-                if((chartMax - chartMin) < 300)
+                if ((chartMax - chartMin) < 300)
                     Ext.getCmp('chartTb-zoomIn').disable();
                 else
                     Ext.getCmp('chartTb-zoomIn').enable();
@@ -601,6 +651,11 @@ function redrawChart() {
     else {
         options.series.splice(eventAxis, 1);
     }
+
+    if(nightsDisplay)
+        addNights(chartMin, chartMax);
+    else
+        options.xAxis.plotBands = null;
 
     options.chart.animation = false;
     chartObject = new Highcharts.Chart(options);
@@ -1043,6 +1098,19 @@ Ext.define('DataMine.graph', {
                         if (eventDisplay == EVT_ALL)
                             return;
                         eventDisplay = EVT_ALL;
+                        redrawChart();
+                    }
+                },
+                '-',
+                {
+                    icon:'images/weather-moon-half.png',
+                    id:'chartTb-night',
+                    disabled:true,
+                    enableToggle: true,
+                    cls:'x-btn-icon',
+                    tooltip:"Display night-time bands",
+                    handler:function () {
+                        nightsDisplay = this.pressed;
                         redrawChart();
                     }
                 },
@@ -1690,15 +1758,21 @@ Ext.define('DataMine.graph', {
 
         var accordion = Ext.create('Ext.Panel', {
             split:true,
-            border:false,
+            border:true,
             region:'west',
             width:450,
+            collapsible:true,
+            preventHeader: true,
             layout:{
                 type:'accordion',
-                hideCollapseTool:true
+                hideCollapseTool: true
             },
             items:[channelList, graphList, graphOptions]
         });
+
+        if(Ext.is.Desktop == false)
+            accordion.collapsed = true;
+
         this.items = [accordion, chartPanel];
 
         this.callParent();

@@ -3,6 +3,27 @@ var configDeviceId = 0
 var configVariableStore;
 var configRootNode;
 
+var graphTypes = [
+    {id:0, Name:"Spline"},
+    {id:1, Name:"Line"},
+    {id:2, Name:"Scatter"},
+    {id:3, Name:"Area"},
+    {id:4, Name:"Area/Line"}
+];
+
+function getGraphType(val)
+{
+    if (val == null)
+        return "Undefined";
+
+    var catLen = graphTypes.length;
+    for (var catCnt = 0; catCnt < catLen; catCnt++) {
+        if (graphTypes[catCnt].id == val)
+            return graphTypes[catCnt].Name;
+    }
+    return "Unknown (" + val + ")";
+}
+
 function getPropertyValue(prop, name) {
     var index = prop.find('name', name);
     return prop.getAt(index).get('value');
@@ -567,7 +588,6 @@ Ext.define('DataMine.configLogging', {
                         Ext.getCmp("configPropTb-save").disable();
                         Ext.getCmp("configPropTb-cancel").disable();
                     }
-
                 }
             }
         });
@@ -664,6 +684,11 @@ Ext.define('DataMine.configLogging', {
         });
         energyCategoryStore.loadData(configEnergyCategories);
 
+        var graphTypeStore = Ext.create('Ext.data.Store', {
+            fields:['id', 'Name']
+        });
+        graphTypeStore.loadData(graphTypes);
+
         var variableOptions = Ext.create('Ext.grid.property.Grid', {
             title:'Properties',
             icon:'images/gear.png',
@@ -700,6 +725,9 @@ Ext.define('DataMine.configLogging', {
                 LoggingEnabled:{
                     displayName:"Logging Enabled"
                 },
+                VeraCategory:{
+                    displayName:"Vera Category"
+                },
                 EnergyCategory:{
                     displayName:"Energy Category",
                     renderer:function (v) {
@@ -708,9 +736,34 @@ Ext.define('DataMine.configLogging', {
                     editor:Ext.create('Ext.form.ComboBox', {
                         store:energyCategoryStore,
                         queryMode:'local',
+                        typeAhead:false,
+                        editable:false,
                         displayField:'Name',
                         valueField:'id'
                     })
+                },
+                GraphType: {
+                    displayName:"Graph Type",
+                    renderer:function (v) {
+                        return getGraphType(v);
+                    },
+                    editor:Ext.create('Ext.form.ComboBox', {
+                        store:graphTypeStore,
+                        queryMode:'local',
+                        typeAhead:false,
+                        editable:false,
+                        displayField:'Name',
+                        valueField:'id'
+                    })
+                },
+                DataOffset: {
+                    displayName:"Data Offset"
+                },
+                DrowsyWarning: {
+                    displayName:"Drowsy Warning"
+                },
+                DrowsyError: {
+                    displayName:"Drowsy Error"
                 }
             },
             viewConfig:{

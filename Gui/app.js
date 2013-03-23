@@ -2,6 +2,9 @@
  * dataMine Graphing package for Vera
  * (c) Chris Jackson
  */
+//<debug>
+//</debug>
+
 
 Ext.Loader.setConfig({
     enabled:true,
@@ -11,8 +14,8 @@ Ext.Loader.setConfig({
 //        'Ext.ux.tab.VerticalPanel':'app/VerticalTab/VerticalPanel.js',
 //        'Ext.ux.toggleslide':'app/toggleslide',
 
-        'Ext.ux':'extjs/ux',
-        'DataMine':'app'
+        'Ext.ux':'extjs/ux'//,
+//        'DataMine':'app'
     }
 });
 
@@ -30,10 +33,7 @@ Ext.require([
     'Ext.layout.container.Border',
     'Ext.layout.container.Accordion',
     'Ext.ux.GroupTabPanel',
-    'DataMine.dashboard',
-    'DataMine.dashEnergyOverview',
-    'DataMine.graph',
-    'DataMine.configLogging'
+    'Ext.ux.statusbar.StatusBar'
 ]);
 
 var configEnergyCategories = [
@@ -94,12 +94,14 @@ var lastLoadTime;
 
 var reloadTime = 0;
 
-var guiVersion = '0.973';
+var guiVersion = '0.974';
 var luaVersion;
 var veraUnits;
 var veraServer = "";
 var veraNotifications;
-var veraNotificationsLast = 0;
+var veraNotificationsLast;
+var veraDayNight;
+var veraDayNightLast;
 
 var statusTooltip;
 
@@ -118,27 +120,30 @@ var initList = [
 
 var initState;
 
+
 Ext.application({
     name:'dataMine',
     launch:function () {
+        /*
         // Detect if this is running as an app...
-//        var app = document.URL.indexOf('http://') === -1 && document.URL.indexOf('https://') === -1;
-//        if (app) {
+        var app = document.URL.indexOf('http://') === -1 && document.URL.indexOf('https://') === -1;
+        if (app) {
 //            super.setIntegerProperty("loadUrlTimeoutValue", 50000);
-//            window.deviceApp = 1;
-//            initState = 0;
-//        } else {
-//            window.deviceApp = 0;
-//            veraServer = "/port_3480";
+            window.deviceApp = 1;
+            initState = 0;
+        } else {
+            window.deviceApp = 0;
+            veraServer = "/port_3480";
 
-        // Step over the vera search function...
-//            initState = 1;
-//        }
+            // Step over the vera search function...
+            initState = 1;
+        }
 
-        initState = 0;
-//        veraServer = "http://192.168.2.200/port_3480";
+        initState = 1;
+        veraServer = "http://192.168.2.200/port_3480";
 //       veraServer = "https://fwd1.mios.com/cjackson/Satellite11/30101033";
-
+*/
+        initState = 0;
         veraServer = "/port_3480";
 //        createUI();
 
@@ -174,7 +179,7 @@ function loadNextConfig() {
 
             window[initList[initState].variable] = Ext.decode(response.responseText);
 
-            if(luaVersion != null) {
+            if (luaVersion != null) {
                 Ext.fly('luaVersion').update(luaVersion.luaversion, false);
                 Ext.fly('guiVersion').update(guiVersion, false);
             }
@@ -220,6 +225,8 @@ function loadNextConfig() {
 }
 
 function loadError(errorText) {
+    return;
+
     Ext.get('loadingSpinner').fadeOut({
         duration:200,
         remove:true
@@ -675,15 +682,37 @@ function getEvents() {
                 // Only add items that are "real"!
                 if (res.Events[listCnt].timestamp != null) {
                     veraNotifications.Events.push(res.Events[listCnt]);
-
-                    if (res.Events[listCnt].timestamp > veraNotificationsLast)
-                        veraNotificationsLast = res.Events[listCnt].timestamp;
                 }
             }
 //            veraNotifications = res;
         },
         failure:function (response, opts) {
             //console.log('server-side failure with status code ' + response.status);
+        }
+    });
+}
+
+function getDayNight() {
+    var now = (new Date()).getTime() / 1000;
+
+    var parms = {};
+    parms.id = "lr_dmCtrl";
+    parms.control = "sunrise";
+
+    Ext.Ajax.request({
+        url:veraServer + '/data_request',
+        params:parms,
+        method:'GET',
+        success:function (response, opts) {
+            veraDayNight = Ext.decode(response.responseText);
+
+            // If there was an error, force an update
+            if (veraDayNight == null)
+                veraDayNightLast = 0;
+        },
+        failure:function (response, opts) {
+            // Force an update
+            veraDayNightLast = 0;
         }
     });
 }
@@ -854,7 +883,7 @@ function createUI() {
 //  Ext.QuickTips.init();
 
     // Get the notifications/events from Vera
-    getEvents();
+//    getEvents();
 
     lastDataVersion = configVera.DataVersion;
     lastLoadTime = configVera.LoadTime;
@@ -995,7 +1024,13 @@ function createUI() {
                         if (res.Events.last != veraNotificationsLast) {
                             // There are new notifications...
                             getEvents();
+                            veraNotificationsLast = res.Events.last;
                         }
+                    }
+                    if (res.lastDayNight != veraDayNightLast) {
+                        // There are new sunrise/set times...
+                        getDayNight();
+                        veraDayNightLast = res.lastDayNight;
                     }
                     if (res.reload != reloadTime) {
                         if (reloadTime != 0) {
@@ -1007,7 +1042,7 @@ function createUI() {
                                 icon:'graph-download-warning',
                                 draggable:false,
                                 closable:false,
-                                buttons: Ext.Msg.OK
+                                buttons:Ext.Msg.OK
                             });
 
                             // Force a full update of the status
@@ -1119,8 +1154,16 @@ function createUI() {
         alias:'widget.statusbar',
         html:'<div id="onlineStatus" style="position:absolute;right:5px;top:3px;"><span id="statustext" style="vertical-align: top;">Online Status </span><img style="margin-top:-1px;" id="statusicon" src="images/status-offline.png"></div>',
         style:{
-            'width':200
+            'width':250
         }
+    });
+
+    Ext.define('StatusBar', {
+        extend:'Ext.Component',
+//        extend: 'Ext.toolbar.Toolbar',
+        alias:'widget.statusbar',
+        html:'<div id="onlineStatus" style="position:absolute;right:5px;top:3px;width:250px;text-align:right"><span id="statustext" style="vertical-align: top;">Online Status </span><img style="margin-top:-1px;" id="statusicon" src="images/status-offline.png"></div>'
+//        cls:'x-statusbar',
     });
 
     var tabMain = Ext.create('Ext.tab.Panel', {
