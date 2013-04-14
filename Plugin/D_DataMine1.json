@@ -69,6 +69,109 @@
 					"Height": 20
 				}
 			},
+
+			{
+				"ControlGroup": "2",
+				"ControlType": "label",
+				"Label": {
+					"lang_tag": "disktotal",
+					"text": "Disk Space Total (kb)"
+				},
+				"top": "0",
+				"Display": {
+					"Top": 70,
+					"Left": 50,
+					"Width": 120,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "variable",
+				"top": "0",
+				"left": "1",
+				"Display": {
+					"Service": "urn:cd-jackson-com:serviceId:DataMine1",
+					"Variable": "diskTotal",
+					"Top": 70,
+					"Left": 175,
+					"Width": 75,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "label",
+				"Label": {
+					"lang_tag": "diskused",
+					"text": "Disk Space Used (kb)"
+				},
+				"top": "0",
+				"Display": {
+					"Top": 90,
+					"Left": 50,
+					"Width": 120,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "variable",
+				"top": "0",
+				"left": "1",
+				"Display": {
+					"Service": "urn:cd-jackson-com:serviceId:DataMine1",
+					"Variable": "diskUsed",
+					"Top": 90,
+					"Left": 175,
+					"Width": 75,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "label",
+				"Label": {
+					"lang_tag": "diskfree",
+					"text": "Disk Space Free (kb)"
+				},
+				"top": "0",
+				"Display": {
+					"Top": 110,
+					"Left": 50,
+					"Width": 120,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "variable",
+				"top": "0",
+				"left": "1",
+				"Display": {
+					"Service": "urn:cd-jackson-com:serviceId:DataMine1",
+					"Variable": "diskFree",
+					"Top": 110,
+					"Left": 175,
+					"Width": 75,
+					"Height": 20
+				}
+			},
+			{
+				"ControlGroup": "2",
+				"ControlType": "variable",
+				"top": "0",
+				"left": "1",
+				"Display": {
+					"Service": "urn:cd-jackson-com:serviceId:DataMine1",
+					"Variable": "diskUsedPcnt",
+					"Top": 110,
+					"Left": 250,
+					"Width": 50,
+					"Height": 20
+				}
+			},
+
 			{
 				"ControlGroup": "2",
 				"ControlType": "label",
@@ -78,7 +181,7 @@
 				},
 				"top": "1",
 				"Display": {
-					"Top": 100,
+					"Top": 160,
 					"Left": 50,
 					"Width": 120,
 					"Height": 20
@@ -93,7 +196,7 @@
 				},
 				"top": "2",
 				"Display": {
-					"Top": 130,
+					"Top": 180,
 					"Left": 50,
 					"Width": 120,
 					"Height": 20

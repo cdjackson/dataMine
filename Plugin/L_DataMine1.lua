@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.974"
+local dmLuaVersion = "0.975"
 
 local mountLocal = ""
 
@@ -394,6 +394,10 @@ function initialise(lul_device)
 			luup.log(DATAMINE_LOG_NAME.."Installing update of dataMine web application")
 			luup.task("Installing update of dataMine web application", 2, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), -1)
 
+			os.execute("rm -rf /www/dm/extjs/")
+			os.execute("rm -rf /www/dm/images/")
+			os.execute("rm -rf /www/dm/js/")
+
 			os.execute("/bin/tar -C /www -xzvf /www/dm/dataMineWeb.tar.gz")
 
 			f=io.open("/www/dm/dataMineWeb.tar.gz","w")
@@ -504,6 +508,9 @@ function deferredStartup()
 
 	-- Delete old backup config files
 	cleanConfigBackup()
+
+	-- Check available memory
+	checkFreeSpace()
 end
 
 -- Removes files from previous versions of GUI
@@ -512,9 +519,7 @@ function removeOldVersion()
 	os.execute("rm -rf /www/dm/app/")
 	os.execute("rm -rf /www/dm/jqwidgets/")
 
-	os.execute("rm /www/dm/images/calendar_view_day.png")
-	os.execute("rm /www/dm/images/calendar_view_week.png")
-	os.execute("rm /www/dm/images/calendar_view_month.png")
+	os.execute("rm /www/dm/app-all.js")
 end
 
 function loadConfigFile(filename)
@@ -694,7 +699,7 @@ function getBackupFiles()
 		return
 	end
 
-	local files = {}
+	local files
 	while true do
 		line = inf:read("*line")
 		if(line == nil) then
@@ -709,6 +714,9 @@ function getBackupFiles()
 		newfile.name = line
 		newfile.time = os.time({tz=tz,day=day,month=month,year=year,hour=hour,min=min,sec=sec})
 
+		if(files == nil) then
+			files = {}
+		end
 		table.insert(files, newfile)
 	end
 	inf:close()
@@ -813,6 +821,7 @@ function checkFreeSpace()
 	local fTmp=io.open(tmpFilename,"r")
 	if fTmp ~= nil then
 		local line = fTmp:read("*line")
+		local line = fTmp:read("*line")
 		io.close(fTmp)
 
 		if(line ~= nil) then
@@ -820,8 +829,10 @@ function checkFreeSpace()
 			for word in line:gmatch("[^%% ]+") do table.insert(words, word) end
 
 			if(words[5] ~= nil) then
-				luup.variable_set(SERVICE_ID, "diskSpace",   tonumber(words[3]), lul_device)
-				luup.variable_set(SERVICE_ID, "diskPercent", tonumber(words[5]), lul_device)
+				luup.variable_set(SERVICE_ID, "diskTotal",    tonumber(words[2]), lul_device)
+				luup.variable_set(SERVICE_ID, "diskUsed",     tonumber(words[3]), lul_device)
+				luup.variable_set(SERVICE_ID, "diskFree",     tonumber(words[4]), lul_device)
+				luup.variable_set(SERVICE_ID, "diskUsedPcnt", tonumber(words[5]), lul_device)
 			end
 		else
 			luup.log(DATAMINE_LOG_NAME .. "Error reading tmpfile during spacecheck")
