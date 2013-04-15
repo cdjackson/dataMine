@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.975"
+local dmLuaVersion = "0.976"
 
 local mountLocal = ""
 
@@ -720,6 +720,10 @@ function getBackupFiles()
 		table.insert(files, newfile)
 	end
 	inf:close()
+
+	if(files == nil) then
+		return
+	end
 
 	-- Get them into order - most recent first
 	table.sort(files, function(a,b) return a.time>b.time end)
@@ -2051,7 +2055,7 @@ workHistory = false		-- REMOVE THIS
 		workCount = workCount + 1
 	end
 
-	luup.log(DATAMINE_LOG_NAME.."is_night="..tostring(luup.is_night()).."  time="..os.time().."  next="..dayNightEvent)
+--	luup.log(DATAMINE_LOG_NAME.."is_night="..tostring(luup.is_night()).."  time="..os.time().."  next="..dayNightEvent)
 
 	-- Log sunrise / sunset times
 	if(luup.is_night() ~= dayNightState) then
