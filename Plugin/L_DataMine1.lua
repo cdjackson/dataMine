@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.976"
+local dmLuaVersion = "0.978.2"
 
 local mountLocal = ""
 
@@ -62,6 +62,8 @@ local mountType     = ""
 local mountPoint    = ""
 local manualMount   = ""
 local mountUUID     = ""
+
+local stateLogging = {}
 
 
 local TEMPERATURE_SERVICE			= "urn:upnp-org:serviceId:TemperatureSensor1"
@@ -364,7 +366,7 @@ function initialise(lul_device)
 			if(mountLocation ~= "") then
 				-- The USB appears to be mounted, but not to the same location that it is now mapped to
 				luup.log(DATAMINE_LOG_NAME.."Mount point error - umount: ".. mountLocation.."::"..mountPoint)
-				os.execute("umount "..dataDir)
+				os.execute("umount "..mountLocation)
 			end
 			luup.task("Mounting dataMine storage device ("..mountPoint..")", 2, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), -1)
 			luup.log(DATAMINE_LOG_NAME.."Mounting dataMine storage ("..mountPoint..") to ("..dataDir..")")
@@ -651,7 +653,10 @@ function loadConfigFile(filename)
 
 					v.Type = tonumber(v.Type)
 
+					stateLogging[v.Id] = 0
 					if(v.Logging == 1 and v.Ghost == false) then
+						stateLogging[v.Id] = 1
+
 						ChannelRec = ChannelRec + 1
 						luup.variable_watch('watchVariable', v.Service, v.Variable, v.Device)
 						luup.log(DATAMINE_LOG_NAME.."Watching: D["..v.Device.."] S["..v.Service.."] V["..v.Variable.."]")
@@ -1556,7 +1561,6 @@ function controlSaveVariable(lul_parameters)
 
 	end
 
-
 	if(lul_parameters.log ~= nil) then
 		if(tonumber(lul_parameters.log) == 1) then
 			configData.Variables[foundId].Logging = 1
@@ -1605,9 +1609,16 @@ function controlSaveVariable(lul_parameters)
 
 	-- Enable the watch callback if logging is enabled
 	if(configData.Variables[foundId].Logging == 1) then
-		-- Enable logging
-		luup.variable_watch('watchVariable', configData.Variables[foundId].Service, configData.Variables[foundId].Variable, tonumber(configData.Variables[foundId].Device))
-		luup.log(DATAMINE_LOG_NAME.."Watching: D["..tonumber(device).."] S["..service.."] V["..variable.."]")
+		-- Enable logging if it hasn't previously been enabled
+		if(stateLogging[foundId] == nil) then
+			stateLogging[foundId] = 0
+		end
+		if(stateLogging[foundId] == 0) then
+			stateLogging[foundId] = 1
+
+			luup.variable_watch('watchVariable', configData.Variables[foundId].Service, configData.Variables[foundId].Variable, tonumber(configData.Variables[foundId].Device))
+			luup.log(DATAMINE_LOG_NAME.."Watching: D["..tonumber(device).."] S["..service.."] V["..variable.."]")
+		end
 	end
 
 	-- Save the configuration if it's changed
