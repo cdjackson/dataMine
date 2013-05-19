@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.978.2"
+local dmLuaVersion = "0.978"
 
 local mountLocal = ""
 
@@ -20,9 +20,6 @@ local eventsEnabled
 local DATAMINE_CONFIG   = "dataMineConfig.json"
 local DATAMINE_LOG_NAME = "dataMine: "
 local DATAMINE_LOG_DIR  = "/dataMine/"
-local DATAMINE_LOG_HIST = "History/"
-
-local dataDirHistory    = "History/"
 
 local FIRST_YEAR     = 1104516000
 local LOGTIME_DAILY  = 31536000
@@ -437,6 +434,9 @@ function initialise(lul_device)
 				if(configFile ~= nil) then
 					luup.log(DATAMINE_LOG_NAME .. "Primary config file load failed. Resorting to backup '"..configFile.."'")
 					configUpdated = loadConfigFile(configFile)
+					if(configData == nil) then
+						luup.log(DATAMINE_LOG_NAME .. "Secondary config file load failed. Configuration will be reset!!")
+					end
 				else
 					luup.log(DATAMINE_LOG_NAME .. "Primary config file load failed. No backup file found!")
 				end
@@ -460,6 +460,7 @@ function initialise(lul_device)
 		configData.Variables = {}
 		configData.Graphs    = {}
 		configData.nextId    = 1
+		configData.dbVersion = 2
 	end
 
 	if(configData.Graphs == nil) then
@@ -562,6 +563,19 @@ function loadConfigFile(filename)
 					configData.LastWrite = 0
 				end
 
+				if(configData.dbVersion == nil) then
+					configData.dbVersion = 0
+				end
+
+				if(configData.dbVersion == 0) then
+					upgradeDatabase()
+					configData.dbVersion = 1
+				end
+
+				if(configData.dbVersion == 1) then
+					luup.call_delay('upgradeDatabaseDeferred', 25, "")
+				end
+
 				for k,v in pairs (configData.Variables) do
 					v.Device = tonumber(v.Device)
 
@@ -603,11 +617,8 @@ function loadConfigFile(filename)
 						v.DataOffset = 0
 					end
 
-
-					if(v.Alpha == 1) then
-						if(type(v.Lookup) ~= "table") then
-							v.Alpha = 0
-						end
+					if(type(v.Lookup) ~= "table") then
+						v.Lookup = nil
 					end
 
 					if(v.Alpha == 0 or v.Alpha == nil) then
@@ -786,7 +797,7 @@ function getLastRecord(Channel, Last)
     local WeekNum  = math.floor(os.time() / LOGTIME_RAW)
 
     repeat
-        logfile = dataDir .. Channel.Archive .. " [R"..WeekNum.."].txt"
+		logfile = dataDir .. "database/"..Channel.Id.."/raw/"..WeekNum..".txt"
 --		luup.log(DATAMINE_LOG_NAME.."Trying "..logfile)
         inf = io.open(logfile, 'r')
         if(inf ~= nil) then
@@ -997,7 +1008,7 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 ---			end
 
 			-- logfile
-			logfile = dataDir .. v.Archive .. " [R" .. WeekNum .. "].txt"
+			logfile = dataDir .. "database/"..v.Id.."/raw/"..WeekNum..".txt"
 
 			-- save reference
 			varRef = v
@@ -1351,6 +1362,8 @@ function controlSaveGraph(lul_parameters)
 	newTable.Reference = lul_parameters.ref
 	newTable.Icon      = tonumber(lul_parameters.icon)
 	newTable.Events    = tonumber(lul_parameters.events)
+	newTable.Night     = tonumber(lul_parameters.night)
+	newTable.Duration  = null
 
 --	luup.log(DATAMINE_LOG_NAME .. "controlSaveGraph: " .. json.encode(newTable))
 
@@ -1528,12 +1541,12 @@ function controlSaveVariable(lul_parameters)
 		end
 
 		-- Remove invalid characters from filenames
-		local fname = newTable.Id .. " " .. luup.devices[device].description .. " - " .. variable
-		local sfile = ""
-		for g in fname:gmatch("[^:/\|#*&?%%]") do
-			sfile = sfile .. g
-		end
-		newTable.Archive  = sfile
+--		local fname = newTable.Id .. " " .. luup.devices[device].description .. " - " .. variable
+--		local sfile = ""
+--		for g in fname:gmatch("[^:/\|#*&?%%]") do
+--			sfile = sfile .. g
+--		end
+--		newTable.Archive  = sfile
 
 		table.insert(configData.Variables, newTable)
 
@@ -1596,6 +1609,21 @@ function controlSaveVariable(lul_parameters)
 		configChanged = true
 	end
 
+	if(lul_parameters.filt ~= nil) then
+		configData.Variables[foundId].FilterEnable = tonumber(lul_parameters.filt)
+		configChanged = true
+	end
+
+	if(lul_parameters.fmax ~= nil) then
+		configData.Variables[foundId].FilterMaximum = tonumber(lul_parameters.fmax)
+		configChanged = true
+	end
+
+	if(lul_parameters.fmin ~= nil) then
+		configData.Variables[foundId].FilterMinimum = tonumber(lul_parameters.fmin)
+		configChanged = true
+	end
+
 	-- Detect if this is an energy logging variable
 	if(service==ENERGY_SERVICE and variable==ENERGY_VARIABLE) then
 		-- Yes, so we should allow the energy configuration options
@@ -1605,6 +1633,26 @@ function controlSaveVariable(lul_parameters)
 			configData.Variables[foundId].EnergyCat = tonumber(lul_parameters.ecat)
 			configChanged = true
 		end
+	end
+
+	if(lul_parameters.lookup ~= nil) then
+		local Lookup = json.decode(lul_parameters.lookup)
+
+		local cnt = 0
+		configData.Variables[foundId].Lookup = {}
+		for k,v in pairs (Lookup) do
+			if(tonumber(v.val) ~= nil) then
+				cnt = cnt + 1
+				configData.Variables[foundId].Lookup[v.lab] = tonumber(v.val)
+			end
+		end
+
+		-- If there were no entries, remove the table
+		if(cnt == 0) then
+			configData.Variables[foundId].Lookup = nil
+		end
+	else
+		configData.Variables[foundId].Lookup = nil
 	end
 
 	-- Enable the watch callback if logging is enabled
@@ -1620,6 +1668,14 @@ function controlSaveVariable(lul_parameters)
 			luup.log(DATAMINE_LOG_NAME.."Watching: D["..tonumber(device).."] S["..service.."] V["..variable.."]")
 		end
 	end
+
+	-- Create directories
+	local cmd = ""
+	cmd = "mkdir "..dataDir.."database/" .. configData.Variables[foundId].Id .. "/"
+	os.execute(cmd)
+	cmd = "mkdir "..dataDir.."database/" .. configData.Variables[foundId].Id .. "/raw/"
+	os.execute(cmd)
+
 
 	-- Save the configuration if it's changed
 	if(configChanged == true) then
@@ -1766,7 +1822,7 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 
 			-- Find the first record after the start time
 			repeat
-				logfile = dataDir .. configData.Variables[Channel].Archive .. " ["..dataType..WeekNum.."].txt"
+				logfile = dataDir .. "database/"..configData.Variables[Channel].Id.."/raw/"..WeekNum..".txt"
 				--luup.log(DATAMINE_LOG_NAME .. "Trying 1:" .. logfile)
 				inf = io.open(logfile, 'r')
 				if(inf ~= nil) then
@@ -1821,16 +1877,17 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 
 						repeat
 							WeekNum = WeekNum + 1
-							logfile = dataDir .. configData.Variables[Channel].Archive .. " ["..dataType..WeekNum.."].txt"
-							luup.log(DATAMINE_LOG_NAME .. "Trying 2:" .. logfile)
+							logfile = dataDir .. "database/"..configData.Variables[Channel].Id.."/raw/"..WeekNum..".txt"
+--							luup.log(DATAMINE_LOG_NAME .. "Trying 2:" .. logfile)
 							inf = io.open(logfile, 'r')
 							if(inf ~= nil) then
 								break
 							end
 						until WeekNum > WeekEnd
 
+						-- If inf is nil, then WeekNum > WeekEnd
 						if(inf == nil) then
-							luup.log(DATAMINE_LOG_NAME .. "2:Unable to open file for read - " .. logfile)
+						--	luup.log(DATAMINE_LOG_NAME .. "2:Unable to open file for read - " .. logfile)
 							break
 						end
 
@@ -1994,7 +2051,8 @@ function incomingData(lul_request, lul_parameters, lul_outputformat)
 
 			lul_html = lul_html .. table.concat(output, ",") .. ']'
 
-			if(configData.Variables[Channel].Alpha == 1) then
+--			if(configData.Variables[Channel].Alpha == 1) then
+			if(configData.Variables[Channel].Lookup ~= nil) then
 				lul_html = lul_html .. ',"ticks":[';
 				first = 1
 				for k,v in pairs (configData.Variables[Channel].Lookup) do
@@ -2158,16 +2216,6 @@ function dumpDebug()
 
 	return html
 end
-
---function getSysInfo()
---	local code, res = luup.inet.wget("http://127.0.0.1/cgi-bin/cmh/sysinfo.sh", 5, "", "")
---	if(code == -1) then
---luup.log(DATAMINE_LOG_NAME.."SysInfo err")
---		return
---	end
---	sysInfo = json.decode(res)
---luup.log(DATAMINE_LOG_NAME.."SysInfo Ok. "..sysInfo.hwkey)
---end
 
 function doEvents()
 	local after
@@ -2369,3 +2417,74 @@ function controlGetSunrise(lul_parameters)
 
 	return Response
 end
+
+
+---------------------------------------------------------
+-- ******************************************************
+-- Functions to upgrade the database structure
+function upgradeDatabase()
+	-- Move the latest files to the new structure.
+	-- This is done on startup.
+	luup.log(DATAMINE_LOG_NAME.."Migrating database")
+
+	local WeekNum = math.floor(os.time() / LOGTIME_RAW)
+	local cmd = ""
+
+	-- Create the archive directory
+	cmd = "mkdir "..dataDir.."database/"
+	os.execute(cmd)
+
+	-- Loop through all variables, and move the most recent file
+	for k,v in pairs (configData.Variables) do
+		cmd = "mkdir "..dataDir.."database/" .. v.Id .. "/"
+		os.execute(cmd)
+		cmd = "mkdir "..dataDir.."database/" .. v.Id .. "/raw/"
+		os.execute(cmd)
+		cmd = "cp '" .. dataDir .. v.Archive .. " [R"..WeekNum.."].txt' " .. dataDir .. "database/"..v.Id.."/raw/"..WeekNum..".txt"
+		luup.log(DATAMINE_LOG_NAME..cmd)
+		os.execute(cmd)
+	end
+end
+
+local taskHandle = -1
+function upgradeDatabaseDeferred()
+	-- Move all remaining files to the new structure.
+	-- This takes time, so is done in a separate "thread".
+
+	local WeekEnd = math.floor(os.time() / LOGTIME_RAW)
+	local cmd = ""
+	local done = false
+
+	-- Loop through all variables, and move the most recent file
+	for k,v in pairs (configData.Variables) do
+		if(v.Archive ~= nil) then
+			luup.log(DATAMINE_LOG_NAME.."Migrating "..v.Id.." - "..v.Name)
+			taskHandle = luup.task("dataMine: Migrating "..v.Name, 1, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), taskHandle)
+
+			WeekNum = FIRSTLOG_RAW
+			repeat
+				cmd = "cp '" .. dataDir .. v.Archive .. " [R"..WeekNum.."].txt' " .. dataDir .. "database/"..v.Id.."/raw/"..WeekNum..".txt"
+				os.execute(cmd)
+
+				WeekNum = WeekNum + 1
+			until WeekNum == WeekEnd
+
+			v.Archive = nil
+			done = true
+			break;
+		end
+	end
+
+	if(done == true) then
+		-- Schedule the next update
+		luup.call_delay('upgradeDatabaseDeferred', 12, "")
+	else
+		luup.task("dataMine: Migration complete", 4, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), taskHandle)
+		-- Mark this as completed!
+		configData.dbVersion = 2
+	end
+
+	saveConfig()
+end
+-- ******************************************************
+---------------------------------------------------------

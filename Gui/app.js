@@ -94,7 +94,7 @@ var lastLoadTime;
 
 var reloadTime = 0;
 
-var guiVersion = '0.974';
+var guiVersion = '0.978';
 var luaVersion;
 var veraUnits;
 var veraServer = "";

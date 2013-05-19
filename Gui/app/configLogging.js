@@ -3,6 +3,8 @@ var configDeviceId = 0
 var configVariableStore;
 var configRootNode;
 
+var lookupStore;
+
 var graphTypes = [
     {id:0, Name:"Spline"},
     {id:1, Name:"Line"},
@@ -11,8 +13,7 @@ var graphTypes = [
     {id:4, Name:"Area/Line"}
 ];
 
-function getGraphType(val)
-{
+function getGraphType(val) {
     if (val == null)
         return "Undefined";
 
@@ -49,9 +50,9 @@ function SaveConfigVariableData() {
     parms.derr = parseFloat(getPropertyValue(prop, 'DrowsyError')) * 60000;
     parms.dwar = parseFloat(getPropertyValue(prop, 'DrowsyWarning')) * 60000;
 
-    if(parms.derr == configGUI.generalDrowsyError)
+    if (parms.derr == configGUI.generalDrowsyError)
         parms.derr = 0;
-    if(parms.dwar == configGUI.generalDrowsyWarning)
+    if (parms.dwar == configGUI.generalDrowsyWarning)
         parms.dwar = 0;
 
     if (getPropertyValue(prop, 'LoggingEnabled') == true)
@@ -59,10 +60,29 @@ function SaveConfigVariableData() {
     else
         parms.log = 0;
 
+    if (getPropertyValue(prop, 'FilterEnable') == true)
+        parms.filt = 1;
+    else
+        parms.filt = 0;
+    parms.fmax = getPropertyValue(prop, 'FilterMaximum');
+    parms.fmin = getPropertyValue(prop, 'FilterMinimum');
+
+    var lookup = [];
+    var lookupCnt = lookupStore.getCount();
+    if (lookupCnt > 0) {
+        for (var Cnt = 0; Cnt < lookupCnt; Cnt++) {
+            var newLookup = {};
+            newLookup.lab = lookupStore.getAt(Cnt).get("label");
+            newLookup.val  = lookupStore.getAt(Cnt).get("value");
+            lookup.push(newLookup);
+        }
+    }
+    parms.lookup = Ext.encode(lookup);
+
     // If this is an energy monitoring variable, then configure the energy settings
     // Make sure it's within valid range by checking the config array
     tmp = getPropertyValue(prop, 'EnergyCategory');
-    if(tmp != null) {
+    if (tmp != null) {
         var catLen = configEnergyCategories.length;
         for (var catCnt = 0; catCnt < catLen; catCnt++) {
             if (configEnergyCategories[catCnt].id == tmp) {
@@ -73,15 +93,30 @@ function SaveConfigVariableData() {
     }
 
     tmp = getPropertyValue(prop, 'GraphType');
-    if(tmp != null) {
+    if (tmp != null) {
         parms.gtype = parseInt(tmp);
     }
 
     Ext.Ajax.request({
-        url:veraServer+'/data_request',
+        url:veraServer + '/data_request',
         params:parms,
         method:'GET',
         success:function (response, opts) {
+            if (response.responseText == "Handler failed") {
+                Ext.MessageBox.show({
+                    msg:'Error saving data : Handler Failed',
+                    width:200,
+                    draggable:false,
+                    icon:'graph-download-error',
+                    closable:false
+                });
+                setTimeout(function () {
+                    Ext.MessageBox.hide();
+                }, 2500);
+
+                return;
+            }
+
             var res = Ext.decode(response.responseText);
 
             // Update the data in the configChan structure
@@ -89,20 +124,25 @@ function SaveConfigVariableData() {
             var total = configChan.length;
             for (var cnt = 0; cnt < total; cnt++) {
                 if (configChan[cnt].Id == res.Variables[0].Id) {
-                    configChan[cnt].Name          = res.Variables[0].Name;
-                    configChan[cnt].Units         = res.Variables[0].Units;
-                    configChan[cnt].Logging       = res.Variables[0].Logging;
-                    configChan[cnt].EnergyCat     = res.Variables[0].EnergyCat;
-                    configChan[cnt].DataOffset    = res.Variables[0].DataOffset;
-                    configChan[cnt].DrowsyError   = res.Variables[0].DrowsyError;
+                    configChan[cnt].Name = res.Variables[0].Name;
+                    configChan[cnt].Units = res.Variables[0].Units;
+                    configChan[cnt].Logging = res.Variables[0].Logging;
+                    configChan[cnt].EnergyCat = res.Variables[0].EnergyCat;
+                    configChan[cnt].DataOffset = res.Variables[0].DataOffset;
+                    configChan[cnt].DrowsyError = res.Variables[0].DrowsyError;
                     configChan[cnt].DrowsyWarning = res.Variables[0].DrowsyWarning;
-                    configChan[cnt].Type          = res.Variables[0].Type;
+                    configChan[cnt].FilterEnable = res.Variables[0].FilterEnable;
+                    configChan[cnt].FilterMaximum = res.Variables[0].FilterMaximum;
+                    configChan[cnt].FilterMinimum = res.Variables[0].FilterMinimum;
+                    configChan[cnt].Type = res.Variables[0].Type;
 
-                    if(configChan[cnt].DrowsyWarning == 0)
+                    if (configChan[cnt].DrowsyWarning == 0)
                         configChan[cnt].DrowsyWarning = configGUI.generalDrowsyWarning;
 
-                    if(configChan[cnt].DrowsyError == 0)
+                    if (configChan[cnt].DrowsyError == 0)
                         configChan[cnt].DrowsyError = configGUI.generalDrowsyError;
+
+                    configChan[cnt].Lookup = res.Variables[0].Lookup;
 
                     found = true;
                     break;
@@ -174,7 +214,7 @@ function SaveConfigVariableData() {
 
             // Add energy icon filter up
             if (getVeraEnergyVariableState(res.Variables[0].Service, res.Variables[0].Variable) == 1) {
-                if(res.Variables[0].EnergyCat != null)
+                if (res.Variables[0].EnergyCat != null)
                     varNode.Energy = 2
 
                 if (svcNode.findChild('Energy', 1) == null)
@@ -204,9 +244,9 @@ function SetConfigVariableData(Device, Service, Variable) {
     var DeviceName = "";
     var Logging = false;
     var Dashboard = false;
-    var OOLEnable = false
-    var OOLMaximum = "";
-    var OOLMinimum = "";
+    var OOLEnable = false;
+    var OOLMaximum = 0;
+    var OOLMinimum = 0;
     var DrowsyWarning = 0;
     var DrowsyError = 0;
     var DataOffset = 0;
@@ -214,6 +254,7 @@ function SetConfigVariableData(Device, Service, Variable) {
     var GraphType = 0;
     var Units = null;
     var EnergyCat = 0;
+    var Lookup = null;
 
     configDeviceId = Device;
 
@@ -231,15 +272,19 @@ function SetConfigVariableData(Device, Service, Variable) {
                 DataOffset = configChan[chCnt].DataOffset;
                 DrowsyWarning = configChan[chCnt].DrowsyWarning;
                 DrowsyError = configChan[chCnt].DrowsyError;
-                if(DrowsyWarning == configGUI.generalDrowsyWarning)
+                if (DrowsyWarning == configGUI.generalDrowsyWarning)
                     DrowsyWarning = 0;
-                if(DrowsyError == configGUI.generalDrowsyError)
+                if (DrowsyError == configGUI.generalDrowsyError)
                     DrowsyError = 0;
                 DrowsyWarning /= 60000;
                 DrowsyError /= 60000;
-                if(EnergyCat == null)
+                if (EnergyCat == null)
                     EnergyCat = 0;
                 GraphType = configChan[chCnt].Type;
+                OOLEnable = configChan[chCnt].FilterEnable == 1 ? true : false;
+                OOLMaximum = configChan[chCnt].FilterMaximum;
+                OOLMinimum = configChan[chCnt].FilterMinimum;
+                Lookup = configChan[chCnt].Lookup;
                 break;
             }
         }
@@ -263,12 +308,35 @@ function SetConfigVariableData(Device, Service, Variable) {
     prop.setProperty("GraphType", GraphType);
 //    prop.setProperty("Data Type", DataType);
 //    prop.setProperty("Display on dashboard", Dashboard);
-//    prop.setProperty("Filter out-of-limits values", OOLEnable);
-//    prop.setProperty("Filter Maximum", OOLMaximum);
-//    prop.setProperty("Filter Minimum", OOLMinimum);
+    prop.setProperty("FilterEnable", OOLEnable);
+    prop.setProperty("FilterMaximum", OOLMaximum);
+    prop.setProperty("FilterMinimum", OOLMinimum);
     prop.setProperty("DataOffset", DataOffset);
     prop.setProperty("DrowsyWarning", DrowsyWarning);
     prop.setProperty("DrowsyError", DrowsyError);
+
+    var lookupCnt = lookupStore.getCount();
+    if (lookupCnt > 0) {
+        for (var Cnt = 0; Cnt < lookupCnt; Cnt++) {
+//            lookupStore.removeAt(Cnt);
+            lookupStore.removeAt(0);
+        }
+    }
+//    lookupStore.removeAll();
+//    Ext.ComponentQuery.query('gridLookup')[0].getSelectionModel().deselectAll();
+    if (Lookup != null) {
+        for (var i in Lookup) {
+            if(i != "") {
+                var newVar = {};
+                newVar.value = Lookup[i];
+                newVar.label = i;
+
+                lookupStore.add(newVar);
+            }
+        }
+    }
+
+    Ext.getCmp("configLookupTb-add").enable();
 }
 
 Ext.define('DataMine.configLogging', {
@@ -359,7 +427,7 @@ Ext.define('DataMine.configLogging', {
                                     configTree[newDevPnt].icon = 'images/tick.png';
                                     configTree[newDevPnt].children[svcPnt].icon = 'images/tick.png';
                                 }
-                                if((configChan[chCnt].EnergyCat != null) && (newVar.Energy == 1)) {
+                                if ((configChan[chCnt].EnergyCat != null) && (newVar.Energy == 1)) {
                                     newVar.Energy = 2;
                                     configTree[newDevPnt].Energy = 2;
                                     configTree[newDevPnt].children[svcPnt].Energy = 2;
@@ -476,6 +544,7 @@ Ext.define('DataMine.configLogging', {
                         var Service = record.get("Service");
                         var Variable = record.get("Parent");
                         SetConfigVariableData(Device, Service, Variable);
+                        Ext.getCmp("tabsConfig").setActiveTab(0);
 
                         Ext.getCmp("configPropTb-save").disable();
                         Ext.getCmp("configPropTb-cancel").disable();
@@ -544,7 +613,7 @@ Ext.define('DataMine.configLogging', {
                                 parms.name = rec.get("Name");
                                 parms.ref = rec.get("Id");
                                 Ext.Ajax.request({
-                                    url:veraServer+'/data_request',
+                                    url:veraServer + '/data_request',
                                     params:parms,
                                     method:'GET',
                                     success:function (response, opts) {
@@ -581,6 +650,7 @@ Ext.define('DataMine.configLogging', {
                                 var Service = configChan[chCnt].Service;
                                 var Variable = configChan[chCnt].Variable;
                                 SetConfigVariableData(Device, Service, Variable);
+                                Ext.getCmp("tabsConfig").setActiveTab(0);
                                 break;
                             }
                         }
@@ -711,12 +781,12 @@ Ext.define('DataMine.configLogging', {
                 "GraphType":"",
                 "DataOffset":"",
                 "DrowsyWarning":"",
-                "DrowsyError":""
+                "DrowsyError":"",
 //                "Data Type":"",
 //                "Display on dashboard":false,
-//                "Filter out-of-limits values":false,
-//                "Filter Maximum":"",
-//                "Filter Minimum":"",
+                "FilterEnable":false,
+                "FilterMaximum":"",
+                "FilterMinimum":""
             },
             sourceConfig:{
                 DisplayName:{
@@ -742,7 +812,7 @@ Ext.define('DataMine.configLogging', {
                         valueField:'id'
                     })
                 },
-                GraphType: {
+                GraphType:{
                     displayName:"Graph Type",
                     renderer:function (v) {
                         return getGraphType(v);
@@ -756,14 +826,23 @@ Ext.define('DataMine.configLogging', {
                         valueField:'id'
                     })
                 },
-                DataOffset: {
+                DataOffset:{
                     displayName:"Data Offset"
                 },
-                DrowsyWarning: {
+                DrowsyWarning:{
                     displayName:"Drowsy Warning"
                 },
-                DrowsyError: {
+                DrowsyError:{
                     displayName:"Drowsy Error"
+                },
+                "FilterEnable": {
+                    displayName:"Enable out-of-limits filter"
+                },
+                "FilterMaximum":{
+                    displayName:"Filter maximum"
+                },
+                "FilterMinimum":{
+                    displayName:"Filter minimum"
                 }
             },
             viewConfig:{
@@ -784,26 +863,199 @@ Ext.define('DataMine.configLogging', {
         });
 
 
-/*
-        var generalOptions = Ext.create('Ext.grid.property.Grid', {
-            title:'Properties',
-            icon:'images/gear.png',
-            id:'configGeneralProperties',
-            tbar:tbProperties,
-            hideHeaders:true,
-            sortableColumns:false,
-            nameColumnWidth:300,
-            region:'center',
-            split:true,
-            source:{
+        /*
+         var generalOptions = Ext.create('Ext.grid.property.Grid', {
+         title:'Properties',
+         icon:'images/gear.png',
+         id:'configGeneralProperties',
+         tbar:tbProperties,
+         hideHeaders:true,
+         sortableColumns:false,
+         nameColumnWidth:300,
+         region:'center',
+         split:true,
+         source:{
+         },
+         viewConfig:{
+         markDirty:true
+         }
+         });*/
+
+        Ext.define('LookupList', {
+            extend:'Ext.data.Model',
+            fields:[
+                {name:'Value'},
+                {name:'Label'}
+            ]
+        });
+
+        // create the data store
+        lookupStore = Ext.create('Ext.data.ArrayStore', {
+            model:'LookupList'
+        });
+
+        var tbLookup = Ext.create('Ext.toolbar.Toolbar', {
+            items:[
+                {
+                    icon:'images/cross.png',
+                    id:'configLookupTb-cancel',
+                    text:'Cancel',
+                    cls:'x-btn-icon',
+                    disabled:true,
+                    tooltip:'Cancel changes made to the lookup table',
+                    handler:function () {
+                        Ext.getCmp("configLookupTb-save").disable();
+                        Ext.getCmp("configLookupTb-cancel").disable();
+                        Ext.getCmp("configLookupTb-add").enable();
+                        Ext.getCmp("configLookupTb-delete").disable();
+
+                        // Reset to the current data
+                        var prop = Ext.getCmp('configProperties').getStore();
+                        var Service = prop.getAt(1).get('value');
+                        var Variable = prop.getAt(2).get('value');
+                        SetConfigVariableData(configDeviceId, Service, Variable);
+                    }
+                },
+                {
+                    icon:'images/disk.png',
+                    id:'configLookupTb-save',
+                    text:'Save',
+                    cls:'x-btn-icon',
+                    disabled:true,
+                    tooltip:'Save changes to the lookup table',
+                    handler:function () {
+                        Ext.getCmp("configLookupTb-save").disable();
+                        Ext.getCmp("configLookupTb-cancel").disable();
+                        Ext.getCmp("configLookupTb-add").enable();
+                        SaveConfigVariableData();
+                    }
+                },
+                {
+                    icon:'images/plus-button.png',
+                    id:'configLookupTb-add',
+                    text:'Add',
+                    cls:'x-btn-icon',
+                    disabled:true,
+                    tooltip:'Add a row to the lookup table',
+                    handler:function () {
+                        Ext.getCmp("configLookupTb-save").enable();
+                        Ext.getCmp("configLookupTb-cancel").enable();
+
+                        var newVar = {};
+                        newVar.value = 0;
+                        newVar.label = "New Label";
+
+                        lookupStore.add(newVar);
+                    }
+                },
+                {
+                    icon:'images/minus-button.png',
+                    id:'configLookupTb-delete',
+                    text:'Delete',
+                    cls:'x-btn-icon',
+                    disabled:true,
+                    tooltip:'Remove highlighted row from the lookup table',
+                    handler:function () {
+                        Ext.getCmp("configLookupTb-save").enable();
+                        Ext.getCmp("configLookupTb-cancel").enable();
+                        Ext.getCmp("configLookupTb-add").enable();
+                        Ext.getCmp("configLookupTb-delete").disable();
+
+                        var selection = Ext.getCmp("gridLookup").getView().getSelectionModel().getSelection()[0];
+                        if (selection) {
+                            lookupStore.remove(selection);
+                        }
+                    }
+                }
+            ]
+        });
+
+        Ext.define('LookupList', {
+            extend:'Ext.data.Model',
+            fields:[
+                {name:'value'},
+                {name:'label'}
+            ],
+            idProperty:'lookup'
+        });
+
+        // create the data store
+        lookupStore = Ext.create('Ext.data.ArrayStore', {
+            model:'LookupList'//,
+//        data: configChan.list
+        });
+
+        this.cellEditing = new Ext.grid.plugin.CellEditing({
+            clicksToEdit:1
+        });
+
+        var variableLookup = Ext.create('Ext.grid.Panel', {
+            xtype:'cell-editing',
+            id:'gridLookup',
+            icon:'images/tables-relation.png',
+            title:'Y-Axis Lookup',
+            plugins:[this.cellEditing],
+            store:lookupStore,
+            columns:[
+                {
+                    header:'Label',
+                    dataIndex:'label',
+                    width:300,
+                    editor:{
+                        allowBlank:false
+                    }
+                },
+                {
+                    header:'Value',
+                    dataIndex:'value',
+                    editor:{
+                        allowBlank:false
+                    }
+                }
+            ],
+            selModel:{
+                selType:'cellmodel'
             },
-            viewConfig:{
-                markDirty:true
+            tbar:tbLookup,
+            listeners : {
+                beforeedit: function(dv, record, item, index, e) {
+                    Ext.getCmp("configLookupTb-delete").enable();
+                },
+                edit: function(dv, record, item, index, e) {
+                    Ext.getCmp("configLookupTb-save").enable();
+                }
             }
-        });*/
+        });
 
+//            onAddClick: function(){
+        // Create a model instance
+//                var rec = new KitchenSink.model.grid.Plant({
+//                    common: 'New Plant 1',
+//                    light: 'Mostly Shady',
+//                    price: 0,
+//                    availDate: Ext.Date.clearTime(new Date()),
+//                    indoor: false
+//                });
 
-        this.items = [accordion, variableOptions];
+//                this.getStore().insert(0, rec);
+//                this.cellEditing.startEditByPosition({
+//                    row: 0,
+//                    column: 0
+//                });
+//            },
+
+//            onRemoveClick: function(grid, rowIndex){
+//                this.getStore().removeAt(rowIndex);
+//            }
+
+        var tabsConfig = Ext.create('Ext.tab.Panel', {
+            region:'center',
+            layout:'fit',
+            id:'tabsConfig',
+            items:[variableOptions, variableLookup]
+        });
+
+        this.items = [accordion, tabsConfig];
 
         this.callParent();
     }

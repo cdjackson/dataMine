@@ -507,13 +507,26 @@ function updateChart(channels, start, stop, newChart) {
                                 seriesTime += 1000;
                                 Counter++;
                             }
-                            while (seriesTime < json.series[s].data[i][0])
+                            while (seriesTime < json.series[s].data[i][0]);
                             //							if(binaryAxis == json.series[s].yaxis)
                             //								json.series[s].data[i][1] += binaryOffset;
                         }
                         json.series[s].data = newSeries;
                     }
-                    else if (dmDev.DataOffset != 0) {
+                    if (dmDev.FilterEnable == true) {
+                        var newSeries = [];
+                        var Counter = 0;
+                        for (var i = 1; i < json.series[s].data.length; i++) {
+                            if(json.series[s].data[i][1] > dmDev.FilterMinimum & json.series[s].data[i][1]<dmDev.FilterMaximum) {
+                                newSeries[Counter] = [];
+                                newSeries[Counter][0] = json.series[s].data[i][0];
+                                newSeries[Counter][1] = json.series[s].data[i][1];
+                                Counter++;
+                            }
+                        }
+                        json.series[s].data = newSeries;
+                    }
+                    if (dmDev.DataOffset != 0) {
                         for (var i = 0; i < json.series[s].data.length; i++) {
                             json.series[s].data[i][1] += dmDev.DataOffset;
                         }
@@ -524,9 +537,11 @@ function updateChart(channels, start, stop, newChart) {
 
                     // If ticks are provided, add categories to the graph
                     if (json.series[s].ticks) {
-                        chartOptions.yAxis[yAxis].categories = new Array();
-                        for (var t = 0; t < json.series[s].ticks.length; t++) {
-                            chartOptions.yAxis[yAxis].categories[json.series[s].ticks[t][1]] = json.series[s].ticks[t][0];
+                        if(json.series[s].ticks.length > 0) {
+                            chartOptions.yAxis[yAxis].categories = new Array();
+                            for (var t = 0; t < json.series[s].ticks.length; t++) {
+                                chartOptions.yAxis[yAxis].categories[json.series[s].ticks[t][1]] = json.series[s].ticks[t][0];
+                            }
                         }
                     }
 
@@ -765,6 +780,14 @@ function saveGraph(channels, options) {
         plugins:[cellEditing]
     });
 
+    var yesnoStore = Ext.create('Ext.data.Store',{
+        fields:['id','name'],
+        data:[
+            {id:1,name:'Yes'},
+            {id:0,name:'No'}
+        ]
+    });
+
     var form = Ext.widget('form', {
         layout:{
             type:'vbox',
@@ -789,18 +812,6 @@ function saveGraph(channels, options) {
 //                    vtype:'name',
                 allowBlank:false
             },
-//            {
-//                xtype:'textfield',
-//                id:'graphRef',
-//                fieldLabel:'Quickview reference',
-//                maxLength:15,
-//                enforceMaxLength:true,
-//                afterLabelTextTpl:'<span data-qtip="Used to reference the graph directly through /dm/graph.html?ref=<i>reference</i>."><img src="images/question.png"></span>',
-//                maskRe:/([0-9a-zA-Z]+)/,
-//                    regex: /[0-9]/,
-//                allowBlank:true
-//            },
-
             {
                 border:false,
                 layout:'column',
@@ -808,6 +819,35 @@ function saveGraph(channels, options) {
                     {
                         columnWidth:0.5,
                         margin:'0 10 0 0',
+                        xtype:'textfield',
+                        id:'graphRef',
+                        fieldLabel:'Quickview reference',
+                        maxLength:15,
+                        enforceMaxLength:true,
+                        afterLabelTextTpl:'<span data-qtip="Used to reference the graph directly through /dm/graph.html?ref=<i>reference</i>."><img src="images/question.png"></span>',
+                        allowBlank:true
+                    },
+                    {
+                        columnWidth:0.5,
+                        margin:'0 0 0 10',
+                        xtype:'textfield',
+                        id:'graphDuration',
+                        fieldLabel:'Duration (days)',
+                        maxLength:5,
+                        enforceMaxLength:true,
+                        maskRe:/([0-9]+)/,
+                        regex: /[0-9]/,
+                        allowBlank:false
+                    }
+                ]
+            },
+            {
+                border:false,
+                layout:'column',
+                items:[
+                    {
+                        columnWidth:0.33,
+                        margin:'0 5 0 0',
                         xtype:'combobox',
                         fieldLabel:'Icon',
                         id:'graphIcon',
@@ -832,8 +872,8 @@ function saveGraph(channels, options) {
                         }
                     },
                     {
-                        columnWidth:0.5,
-                        margin:'0 0 0 10',
+                        columnWidth:0.33,
+                        margin:'0 0 0 0',
                         xtype:'combobox',
                         fieldLabel:'Events',
                         id:'graphEvents',
@@ -856,10 +896,35 @@ function saveGraph(channels, options) {
                                 return tpl;
                             }
                         }
+                    },
+                    {
+                        columnWidth:0.33,
+                        margin:'0 0 0 5',
+                        xtype:'combobox',
+                        fieldLabel:'Night Shading',
+                        id:'graphNight',
+                        name:'graphNight',
+                        store:yesnoStore,
+                        allowBlank:false,
+                        value:0,
+                        valueField:'id',
+                        displayField:'name',
+                        queryMode:'local',
+                        forceSelection:true,
+                        editable:false,
+                        typeAhead:false,
+                        queryMode:'local'//,
+//                        listConfig:{
+//                            getInnerTpl:function () {
+//                                var tpl = '<div>' +
+//                                    '<img src="images/{icon}" align="left">&nbsp;&nbsp;' +
+//                                    '{name}</div>';
+//                                return tpl;
+//                            }
+//                        }
                     }
                 ]
             }
-
         ],
         buttons:[
             {
@@ -880,7 +945,9 @@ function saveGraph(channels, options) {
                     parms.name = Ext.getCmp('graphName').getValue();
                     parms.icon = Ext.getCmp('graphIcon').getValue();
                     parms.events = Ext.getCmp('graphEvents').getValue();
-//                    parms.ref = Ext.getCmp('graphRef').getValue();
+                    parms.ref = Ext.getCmp('graphRef').getValue();
+                    parms.night = Ext.getCmp('graphNight').getValue();
+                    parms.period = Ext.getCmp('graphDuration').getValue() * 86400;
 
                     var data = saveGraphStore.getRange();
                     for (var chCnt = 0; chCnt < data.length; chCnt++) {
@@ -910,8 +977,8 @@ function saveGraph(channels, options) {
     saveWin = Ext.widget('window', {
         title:'Save Graph',
         closeAction:'destroy',
-        width:450,
-        height:370,
+        width:475,
+        height:430,
         layout:'fit',
         resizable:false,
         draggable:false,
@@ -934,7 +1001,20 @@ function saveGraph(channels, options) {
 
         if (options.Events != null)
             Ext.getCmp('graphEvents').setValue(options.Events);
+
+        if (options.Night != null)
+            Ext.getCmp('graphNight').setValue(options.Night);
+
+        if (options.Period != null)
+            Ext.getCmp('graphDuration').setValue(options.Period/86400);
+
+        if (options.Period != null)
+            Ext.getCmp('graphRef').setValue(options.Reference);
     }
+
+    if(Ext.getCmp('graphDuration').getValue() == "")
+        Ext.getCmp('graphDuration').setValue(configGUI.graphDefaultPeriod);
+
 }
 
 Ext.define('DataMine.graph', {
@@ -1225,7 +1305,7 @@ Ext.define('DataMine.graph', {
                             var rec = channelStore.getAt(Cnt);
                             if (rec.get('selected') == 1) {
                                 channels[chanCnt] = {};
-                                channels[chanCnt].axis = rec.get('yAxis');
+                                channels[chanCnt].axis = rec.get('yAxis') + 1;
                                 channels[chanCnt++].value = rec.get('Id');
                             }
                         }
@@ -1725,11 +1805,22 @@ Ext.define('DataMine.graph', {
                                     }
                                 }
 
-                                //                               if(chartMin == 0 || chartMax == 0) {
                                 var ts = Math.round((new Date()).getTime() / 1000);
-                                chartMin = ts - (configGUI.graphDefaultPeriod * 86400);
                                 chartMax = ts;
-                                //                               }
+                                if(configGraph[Cnt].Period != null) {
+                                    chartMin = ts - configGraph[Cnt].Period;
+                                }
+                                else {
+                                    chartMin = ts - (configGUI.graphDefaultPeriod * 86400);
+                                }
+
+                                if (configGraph[Cnt].Night != null) {
+                                    if(configGraph[Cnt].Night > 0)
+                                        nightsDisplay = true;
+                                    else
+                                        nightsDisplay = false;
+                                        Ext.getCmp('chartTb-night').toggle(nightsDisplay);
+                                }
 
                                 if (configGraph[Cnt].Events == null)
                                     eventDisplay = EVT_NONE;
