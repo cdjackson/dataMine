@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.978"
+local dmLuaVersion = "0.979"
 
 local mountLocal = ""
 
@@ -232,12 +232,15 @@ serviceTypeArray[13].Service  = WXWINDCOND_SERVICE
 serviceTypeArray[13].Variable = WXWINDCOND_VARIABLE
 serviceTypeArray[13].Type     = DATATYPE_WEATHER
 
-
+local dmDevice
 
 -- Run once at Luup engine startup.
 function initialise(lul_device)
 	-- Help prevent race condition
 	luup.io.intercept()
+
+	-- Keep local copy of device number
+	dmDevice = lul_device
 
 	luup.log(DATAMINE_LOG_NAME.."Initialising dataMine System ("..dmLuaVersion..")")
 
@@ -247,10 +250,10 @@ function initialise(lul_device)
 
 	-- The data directory is stored as a service variable to allow it to be
 	-- read out before the config file.
-	dataDir = luup.variable_get(SERVICE_ID, "SetDataDirectory", lul_device)
+	dataDir = luup.variable_get(SERVICE_ID, "SetDataDirectory", dmDevice)
 	if(dataDir == nil) then
 		dataDir = DATAMINE_LOG_DIR
-		luup.variable_set(SERVICE_ID, "SetDataDirectory", DATAMINE_LOG_DIR, lul_device)
+		luup.variable_set(SERVICE_ID, "SetDataDirectory", DATAMINE_LOG_DIR, dmDevice)
 	end
 
 	-- Make sure the directory is terminated with a /
@@ -259,31 +262,31 @@ function initialise(lul_device)
 	end
 
 	-- Get the USB UUID
-	mountUUID = luup.variable_get(SERVICE_ID, "SetMountUUID", lul_device)
+	mountUUID = luup.variable_get(SERVICE_ID, "SetMountUUID", dmDevice)
 	if(mountUUID == nil) then
 		mountUUID = ""
-		luup.variable_set(SERVICE_ID, "SetMountUUID", "", lul_device)
+		luup.variable_set(SERVICE_ID, "SetMountUUID", "", dmDevice)
 	end
 
 	-- Get the mount point
-	mountPoint = luup.variable_get(SERVICE_ID, "SetMountPoint", lul_device)
+	mountPoint = luup.variable_get(SERVICE_ID, "SetMountPoint", dmDevice)
 	if(mountPoint == nil) then
 		mountPoint = ""
-		luup.variable_set(SERVICE_ID, "SetMountPoint", "", lul_device)
+		luup.variable_set(SERVICE_ID, "SetMountPoint", "", dmDevice)
 	end
 
 	-- Do we want to manually mount the USB (or not mount at all!)
-	manualMount = luup.variable_get(SERVICE_ID, "SetManualMount", lul_device)
+	manualMount = luup.variable_get(SERVICE_ID, "SetManualMount", dmDevice)
 	if(manualMount == nil) then
 		manualMount = 0
-		luup.variable_set(SERVICE_ID, "SetManualMount", 0, lul_device)
+		luup.variable_set(SERVICE_ID, "SetManualMount", 0, dmDevice)
 	end
 
 	-- Get the timeout period
-	timeoutPeriod = luup.variable_get(SERVICE_ID, "SetTimeoutPeriod", lul_device)
+	timeoutPeriod = luup.variable_get(SERVICE_ID, "SetTimeoutPeriod", dmDevice)
 	if(timeoutPeriod == nil) then
 		timeoutPeriod = 12
-		luup.variable_set(SERVICE_ID, "SetTimeoutPeriod", 12, lul_device)
+		luup.variable_set(SERVICE_ID, "SetTimeoutPeriod", 12, dmDevice)
 	end
 	timeoutPeriod = tonumber(timeoutPeriod)
 	if(timeoutPeriod < 5) then
@@ -293,10 +296,10 @@ function initialise(lul_device)
 	end
 
 	-- Is history enabled?
-	historyEnabled = luup.variable_get(SERVICE_ID, "SetHistoryEnable", lul_device)
+	historyEnabled = luup.variable_get(SERVICE_ID, "SetHistoryEnable", dmDevice)
 	if(historyEnabled == nil) then
 		historyEnabled = 1
-		luup.variable_set(SERVICE_ID, "SetHistoryEnable", historyEnabled, lul_device)
+		luup.variable_set(SERVICE_ID, "SetHistoryEnable", historyEnabled, dmDevice)
 	end
 	historyEnabled = tonumber(historyEnabled)
 --	if(historyEnabled > 0) then
@@ -306,18 +309,18 @@ function initialise(lul_device)
 --	end
 
 	-- Is auto backup revert enabled?
-	loadBackup = luup.variable_get(SERVICE_ID, "SetUseBackup", lul_device)
+	loadBackup = luup.variable_get(SERVICE_ID, "SetUseBackup", dmDevice)
 	if(loadBackup == nil) then
 		loadBackup = 1
-		luup.variable_set(SERVICE_ID, "SetUseBackup", loadBackup, lul_device)
+		luup.variable_set(SERVICE_ID, "SetUseBackup", loadBackup, dmDevice)
 	end
 	loadBackup = tonumber(loadBackup)
 
 	-- Are notifications enabled?
-	eventsEnabled = luup.variable_get(SERVICE_ID, "SetEventsEnable", lul_device)
+	eventsEnabled = luup.variable_get(SERVICE_ID, "SetEventsEnable", dmDevice)
 	if(eventsEnabled == nil) then
 		eventsEnabled = 1
-		luup.variable_set(SERVICE_ID, "SetEventsEnable", eventsEnabled, lul_device)
+		luup.variable_set(SERVICE_ID, "SetEventsEnable", eventsEnabled, dmDevice)
 	end
 	eventsEnabled = tonumber(eventsEnabled)
 	if(eventsEnabled > 0) then
@@ -327,16 +330,17 @@ function initialise(lul_device)
 	end
 
 	-- Set the logging variables so that the user sees "0" if there's an error
-	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, lul_device)
-	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, lul_device)
+	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, dmDevice)
+	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, dmDevice)
 
 	stateInitialised = true
 
 	if(tonumber(manualMount) == 1) then
-		luup.variable_set(SERVICE_ID, "mountLocation", "** Manual", lul_device)
-		luup.variable_set(SERVICE_ID, "mountType",     "** Manual", lul_device)
+		luup.variable_set(SERVICE_ID, "mountLocation", "** Manual", dmDevice)
+		luup.variable_set(SERVICE_ID, "mountType",     "** Manual", dmDevice)
 
 		os.execute("mkdir "..dataDir)
+		os.execute("mkdir "..dataDir.."database/")
 
 		luup.log(DATAMINE_LOG_NAME.."Manual mounting to ("..dataDir..")")
 	elseif(mountPoint == "" and mountUUID == "") then
@@ -365,17 +369,18 @@ function initialise(lul_device)
 				luup.log(DATAMINE_LOG_NAME.."Mount point error - umount: ".. mountLocation.."::"..mountPoint)
 				os.execute("umount "..mountLocation)
 			end
-			luup.task("Mounting dataMine storage device ("..mountPoint..")", 2, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), -1)
+			luup.task("Mounting dataMine storage device ("..mountPoint..")", 2, string.format("%s[%d]", luup.devices[dmDevice].description, dmDevice), -1)
 			luup.log(DATAMINE_LOG_NAME.."Mounting dataMine storage ("..mountPoint..") to ("..dataDir..")")
 
 			os.execute("mkdir "..dataDir)
+			os.execute("mkdir "..dataDir.."database/")
 			os.execute("mount "..mountPoint.." "..dataDir)
 
 			-- Recheck the mount
 			checkMount()
 
 			if(mountLocation ~= mountPoint) then
-				luup.task("Mount point error: ".. mountLocation.."::"..mountPoint, 2, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), -1)
+				luup.task("Mount point error: ".. mountLocation.."::"..mountPoint, 2, string.format("%s[%d]", luup.devices[dmDevice].description, dmDevice), -1)
 				luup.log(DATAMINE_LOG_NAME.."Mount point error: ".. mountLocation.."::"..mountPoint)
 				errorStatus = true
 				stateInitialised = false
@@ -391,7 +396,7 @@ function initialise(lul_device)
 
 		if(len ~= nil) then
 			luup.log(DATAMINE_LOG_NAME.."Installing update of dataMine web application")
-			luup.task("Installing update of dataMine web application", 2, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), -1)
+			luup.task("Installing update of dataMine web application", 2, string.format("%s[%d]", luup.devices[dmDevice].description, dmDevice), -1)
 
 			os.execute("rm -rf /www/dm/extjs/")
 			os.execute("rm -rf /www/dm/images/")
@@ -451,8 +456,8 @@ function initialise(lul_device)
 		luup.call_delay('doWork', 40, "")
 	end
 
-	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, lul_device)
-	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, lul_device)
+	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, dmDevice)
+	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, dmDevice)
 
 	if(configData == nil) then
 		luup.log(DATAMINE_LOG_NAME .. "Reinitialising configuration structure")
@@ -573,7 +578,7 @@ function loadConfigFile(filename)
 				end
 
 				if(configData.dbVersion == 1) then
-					luup.call_delay('upgradeDatabaseDeferred', 25, "")
+--					luup.call_delay('upgradeDatabaseDeferred', 25, "")
 				end
 
 				for k,v in pairs (configData.Variables) do
@@ -621,9 +626,6 @@ function loadConfigFile(filename)
 						v.Lookup = nil
 					end
 
-					if(v.Alpha == 0 or v.Alpha == nil) then
-						v.Lookup = nil
-					end
 					local LastValue = luup.variable_get(v.Service, v.Variable, v.Device)
 					if(LastValue == nil) then
 						v.Ghost = true
@@ -849,10 +851,10 @@ function checkFreeSpace()
 			for word in line:gmatch("[^%% ]+") do table.insert(words, word) end
 
 			if(words[5] ~= nil) then
-				luup.variable_set(SERVICE_ID, "diskTotal",    tonumber(words[2]), lul_device)
-				luup.variable_set(SERVICE_ID, "diskUsed",     tonumber(words[3]), lul_device)
-				luup.variable_set(SERVICE_ID, "diskFree",     tonumber(words[4]), lul_device)
-				luup.variable_set(SERVICE_ID, "diskUsedPcnt", tonumber(words[5]), lul_device)
+				luup.variable_set(SERVICE_ID, "diskTotal",    tonumber(words[2]), dmDevice)
+				luup.variable_set(SERVICE_ID, "diskUsed",     tonumber(words[3]), dmDevice)
+				luup.variable_set(SERVICE_ID, "diskFree",     tonumber(words[4]), dmDevice)
+				luup.variable_set(SERVICE_ID, "diskUsedPcnt", tonumber(words[5]), dmDevice)
 			end
 		else
 			luup.log(DATAMINE_LOG_NAME .. "Error reading tmpfile during spacecheck")
@@ -936,8 +938,8 @@ function checkMount()
 		luup.log(DATAMINE_LOG_NAME .. "Error opening tmpfile during mountcheck")
 	end
 
-	luup.variable_set(SERVICE_ID, "mountLocation", mountLocation, lul_device)
-	luup.variable_set(SERVICE_ID, "mountType",     mountType,     lul_device)
+	luup.variable_set(SERVICE_ID, "mountLocation", mountLocation, dmDevice)
+	luup.variable_set(SERVICE_ID, "mountType",     mountType,     dmDevice)
 
 	os.execute("rm "..tmpFilename)
 end
@@ -987,7 +989,7 @@ function getChannelRef(Id)
 end
 
 -- Watch Callback
-function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul_value_new)
+function watchVariable(dmDevice, lul_service, lul_variable, lul_value_old, lul_value_new)
 	-- Calculate the week number
 	local WeekNum = math.floor(os.time() / LOGTIME_RAW)
 	local logfile = nil
@@ -995,7 +997,7 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 	local varKey  = nil
 
 	for k,v in pairs (configData.Variables) do
-		if(v.Device==tonumber(lul_device) and v.Service==lul_service and v.Variable==lul_variable) then
+		if(v.Device==tonumber(dmDevice) and v.Service==lul_service and v.Variable==lul_variable) then
 			if(v.Logging == 0) then
 				-- Return if logging is disabled for this variable
 				return
@@ -1018,7 +1020,7 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 	end
 
 	if(logfile == nil) then
-		luup.log(DATAMINE_LOG_NAME .. "Logging error logging variable "..lul_device.."::"..lul_service.."::"..lul_variable)
+		luup.log(DATAMINE_LOG_NAME .. "Logging error logging variable "..dmDevice.."::"..lul_service.."::"..lul_variable)
 		luup.log(DATAMINE_LOG_NAME .. "Didn't find variable!")
 		return
 	end
@@ -1049,11 +1051,11 @@ function watchVariable(lul_device, lul_service, lul_variable, lul_value_old, lul
 	end
 
 
---	luup.log ((DATAMINE_LOG_NAME .. logfile .. " WEEK:"..WeekNum.." watchVarVariable(%s/%s/%s/%s/%s)"):format (tostring(lul_device), lul_service, lul_variable, tostring(lul_value_old), tostring(lul_value_new)))
+--	luup.log ((DATAMINE_LOG_NAME .. logfile .. " WEEK:"..WeekNum.." watchVarVariable(%s/%s/%s/%s/%s)"):format (tostring(dmDevice), lul_service, lul_variable, tostring(lul_value_old), tostring(lul_value_new)))
 
 	local outf, err = io.open(logfile, 'a')
 	if(outf == nil) then
-		luup.log(DATAMINE_LOG_NAME .. "Logging error logging variable "..lul_device.."::"..lul_service.."::"..lul_variable)
+		luup.log(DATAMINE_LOG_NAME .. "Logging error logging variable "..dmDevice.."::"..lul_service.."::"..lul_variable)
 		luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
 		luup.log(DATAMINE_LOG_NAME .. "Error: '" .. err .. "'")
 		errorStatus = true
@@ -1110,8 +1112,8 @@ function saveConfig(doBackup)
 		end
 	end
 
-	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, lul_device)
-	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, lul_device)
+	luup.variable_set(SERVICE_ID, "ChannelCnt", ChannelCnt, dmDevice)
+	luup.variable_set(SERVICE_ID, "ChannelRec", ChannelRec, dmDevice)
 end
 
 
@@ -1159,26 +1161,26 @@ function getAppConfig()
 
 	os.execute("rm "..tmpFilename)
 
-	config.luup.SetDataDirectory = luup.variable_get(SERVICE_ID, "SetDataDirectory", lul_device)
-	config.luup.SetMountUUID     = luup.variable_get(SERVICE_ID, "SetMountUUID",     lul_device)
-	config.luup.SetMountPoint    = luup.variable_get(SERVICE_ID, "SetMountPoint",    lul_device)
-	config.luup.SetManualMount   = luup.variable_get(SERVICE_ID, "SetManualMount",   lul_device)
+	config.luup.SetDataDirectory = luup.variable_get(SERVICE_ID, "SetDataDirectory", dmDevice)
+	config.luup.SetMountUUID     = luup.variable_get(SERVICE_ID, "SetMountUUID",     dmDevice)
+	config.luup.SetMountPoint    = luup.variable_get(SERVICE_ID, "SetMountPoint",    dmDevice)
+	config.luup.SetManualMount   = luup.variable_get(SERVICE_ID, "SetManualMount",   dmDevice)
 
 	return json.encode(config)
 end
 
 function setAppConfig(lul_parameters)
 	if(lul_parameters.SetDataDirectory ~= nil) then
-		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetDataDirectory, lul_device)
+		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetDataDirectory, dmDevice)
 	end
 	if(lul_parameters.SetMountUUID ~= nil) then
-		luup.variable_set(SERVICE_ID, "SetMountUUID", lul_parameters.SetMountUUID, lul_device)
+		luup.variable_set(SERVICE_ID, "SetMountUUID", lul_parameters.SetMountUUID, dmDevice)
 	end
 --	if(lul_parameters.SetDataDirectory ~= nil) then
---		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetMountUUID, lul_device)
+--		luup.variable_set(SERVICE_ID, "SetDataDirectory", lul_parameters.SetMountUUID, dmDevice)
 --	end
 --	if(lul_parameters.SetManualMount ~= nil) then
---		luup.variable_set(SERVICE_ID, "SetManualMount", lul_parameters.SetMountUUID, lul_device)
+--		luup.variable_set(SERVICE_ID, "SetManualMount", lul_parameters.SetMountUUID, dmDevice)
 --	end
 
 	return "Ok"
@@ -1629,13 +1631,14 @@ function controlSaveVariable(lul_parameters)
 		-- Yes, so we should allow the energy configuration options
 
 		if(lul_parameters.ecat ~= nil) then
-			luup.log(DATAMINE_LOG_NAME.."Energy Category = "..lul_parameters.ecat)
+--			luup.log(DATAMINE_LOG_NAME.."Energy Category = "..lul_parameters.ecat)
 			configData.Variables[foundId].EnergyCat = tonumber(lul_parameters.ecat)
 			configChanged = true
 		end
 	end
 
 	if(lul_parameters.lookup ~= nil) then
+		luup.log(DATAMINE_LOG_NAME.."Save Lookup="..lul_parameters.lookup)
 		local Lookup = json.decode(lul_parameters.lookup)
 
 		local cnt = 0
@@ -1649,9 +1652,11 @@ function controlSaveVariable(lul_parameters)
 
 		-- If there were no entries, remove the table
 		if(cnt == 0) then
+			luup.log(DATAMINE_LOG_NAME.."Save Lookup cnt=0")
 			configData.Variables[foundId].Lookup = nil
 		end
 	else
+		luup.log(DATAMINE_LOG_NAME.."Lookup not found")
 		configData.Variables[foundId].Lookup = nil
 	end
 
@@ -2206,10 +2211,10 @@ function dumpDebug()
 		end
 	end
 	html = html .. "-5-===========================================================================\n"
-	html = html .. "SetDataDirectory-"..luup.variable_get(SERVICE_ID, "SetDataDirectory", lul_device).."\n"
-	html = html .. "SetMountUUID    -"..luup.variable_get(SERVICE_ID, "SetMountUUID",     lul_device).."\n"
-	html = html .. "SetMountPoint   -"..luup.variable_get(SERVICE_ID, "SetMountPoint",    lul_device).."\n"
-	html = html .. "SetManualMount  -"..luup.variable_get(SERVICE_ID, "SetManualMount",   lul_device).."\n"
+	html = html .. "SetDataDirectory-"..luup.variable_get(SERVICE_ID, "SetDataDirectory", dmDevice).."\n"
+	html = html .. "SetMountUUID    -"..luup.variable_get(SERVICE_ID, "SetMountUUID",     dmDevice).."\n"
+	html = html .. "SetMountPoint   -"..luup.variable_get(SERVICE_ID, "SetMountPoint",    dmDevice).."\n"
+	html = html .. "SetManualMount  -"..luup.variable_get(SERVICE_ID, "SetManualMount",   dmDevice).."\n"
 	html = html .. "-6-===========================================================================\n"
 	html = html .. json.encode(configData) .. "\n"
 	html = html .. "-7-===========================================================================\n"
@@ -2455,11 +2460,10 @@ function upgradeDatabaseDeferred()
 	local cmd = ""
 	local done = false
 
-	-- Loop through all variables, and move the most recent file
+	-- Loop through all variables, and move the older data
 	for k,v in pairs (configData.Variables) do
 		if(v.Archive ~= nil) then
 			luup.log(DATAMINE_LOG_NAME.."Migrating "..v.Id.." - "..v.Name)
-			taskHandle = luup.task("dataMine: Migrating "..v.Name, 1, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), taskHandle)
 
 			WeekNum = FIRSTLOG_RAW
 			repeat
@@ -2479,7 +2483,6 @@ function upgradeDatabaseDeferred()
 		-- Schedule the next update
 		luup.call_delay('upgradeDatabaseDeferred', 12, "")
 	else
-		luup.task("dataMine: Migration complete", 4, string.format("%s[%d]", luup.devices[lul_device].description, lul_device), taskHandle)
 		-- Mark this as completed!
 		configData.dbVersion = 2
 	end
