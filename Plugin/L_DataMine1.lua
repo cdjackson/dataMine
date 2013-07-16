@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.979"
+local dmLuaVersion = "0.980"
 
 local mountLocal = ""
 
@@ -59,6 +59,7 @@ local mountType     = ""
 local mountPoint    = ""
 local manualMount   = ""
 local mountUUID     = ""
+local mountOptions  = ""
 
 local stateLogging = {}
 
@@ -244,6 +245,8 @@ function initialise(lul_device)
 
 	luup.log(DATAMINE_LOG_NAME.."Initialising dataMine System ("..dmLuaVersion..")")
 
+	luup.variable_set(SERVICE_ID, "errorStatus", "false", dmDevice)
+
 --	local url = "https://apps.mios.com/get_plugin_json2.php?plugin=1088&ap=".. luup.pk_accesspoint .."&HW_Key=".. luup.hw_key
 --	local status, content = luup.inet.wget(url)
 --	luup.log(DATAMINE_LOG_NAME.."status = "..status..", content = "..content)
@@ -273,6 +276,13 @@ function initialise(lul_device)
 	if(mountPoint == nil) then
 		mountPoint = ""
 		luup.variable_set(SERVICE_ID, "SetMountPoint", "", dmDevice)
+	end
+
+	-- Get the mount options
+	mountOptions = luup.variable_get(SERVICE_ID, "SetMountOptions", dmDevice)
+	if(mountOptions == nil) then
+		mountOptions = ""
+		luup.variable_set(SERVICE_ID, "SetMountOptions", "", dmDevice)
 	end
 
 	-- Do we want to manually mount the USB (or not mount at all!)
@@ -339,54 +349,21 @@ function initialise(lul_device)
 		luup.variable_set(SERVICE_ID, "mountLocation", "** Manual", dmDevice)
 		luup.variable_set(SERVICE_ID, "mountType",     "** Manual", dmDevice)
 
-		os.execute("mkdir "..dataDir)
-		os.execute("mkdir "..dataDir.."database/")
-
 		luup.log(DATAMINE_LOG_NAME.."Manual mounting to ("..dataDir..")")
 	elseif(mountPoint == "" and mountUUID == "") then
 		-- Error - we haven't specified a manual mount, and we haven't specified a UUID
 		-- Can't mount!
 		stateInitialised = false
 	else
-		-- Check the UUID
-		if(mountPoint == "" and mountUUID ~= "") then
-			luup.log(DATAMINE_LOG_NAME.. "Mounting to UUID '"..mountUUID.."'")
-			mountPoint = checkUUID(mountUUID)
-			if(mountPoint == "") then
-				luup.log(DATAMINE_LOG_NAME.. "No UUID mount '"..mountUUID.."' was found!")
-			else
-				luup.log(DATAMINE_LOG_NAME.. "Found UUID '"..mountUUID.."' at '"..mountPoint.."'")
-			end
-		end
-
-		-- Check if the USB is mounted
-		checkMount()
-
-		-- Is the storage device mounted
-		if(mountLocation ~= mountPoint) then
-			if(mountLocation ~= "") then
-				-- The USB appears to be mounted, but not to the same location that it is now mapped to
-				luup.log(DATAMINE_LOG_NAME.."Mount point error - umount: ".. mountLocation.."::"..mountPoint)
-				os.execute("umount "..mountLocation)
-			end
-			luup.task("Mounting dataMine storage device ("..mountPoint..")", 2, string.format("%s[%d]", luup.devices[dmDevice].description, dmDevice), -1)
-			luup.log(DATAMINE_LOG_NAME.."Mounting dataMine storage ("..mountPoint..") to ("..dataDir..")")
-
-			os.execute("mkdir "..dataDir)
-			os.execute("mkdir "..dataDir.."database/")
-			os.execute("mount "..mountPoint.." "..dataDir)
-
-			-- Recheck the mount
-			checkMount()
-
-			if(mountLocation ~= mountPoint) then
-				luup.task("Mount point error: ".. mountLocation.."::"..mountPoint, 2, string.format("%s[%d]", luup.devices[dmDevice].description, dmDevice), -1)
-				luup.log(DATAMINE_LOG_NAME.."Mount point error: ".. mountLocation.."::"..mountPoint)
-				errorStatus = true
-				stateInitialised = false
-			end
-		end
+		doMount()
 	end
+
+	-- Create the database directory
+	if(stateInitialised == true) then
+		os.execute("mkdir "..dataDir)
+		os.execute("mkdir "..dataDir.."database/")
+	end
+
 
 	-- Check if there's a GUI package to unpack
 	local f=io.open("/www/dm/dataMineWeb.tar.gz","r")
@@ -510,6 +487,46 @@ function initialise(lul_device)
 	luup.log(DATAMINE_LOG_NAME .. "Startup complete")
 end
 
+function doMount()
+	-- Check the UUID
+	if(mountPoint == "" and mountUUID ~= "") then
+		luup.log(DATAMINE_LOG_NAME.. "Mounting to UUID '"..mountUUID.."'")
+		mountPoint = checkUUID(mountUUID)
+		if(mountPoint == "") then
+			luup.log(DATAMINE_LOG_NAME.. "No UUID mount '"..mountUUID.."' was found!")
+		else
+			luup.log(DATAMINE_LOG_NAME.. "Found UUID '"..mountUUID.."' at '"..mountPoint.."'")
+		end
+	end
+
+	-- Check if the USB is mounted
+	checkMount()
+
+	-- Is the storage device mounted
+	if(mountLocation ~= mountPoint) then
+		if(mountLocation ~= "") then
+			-- The USB appears to be mounted, but not to the same location that it is now mapped to
+			luup.log(DATAMINE_LOG_NAME.."Mount point error - umount: ".. mountLocation .."::".. mountPoint)
+			os.execute("umount "..dataDir)
+		end
+		luup.task("Mounting dataMine storage device ("..mountPoint..")", 2, string.format("%s[%d]", luup.devices[dmDevice].description, dmDevice), -1)
+		luup.log(DATAMINE_LOG_NAME.."Mounting dataMine storage ("..mountPoint..") to ("..dataDir..")")
+
+		os.execute("mount "..mountPoint.." "..dataDir.." "..mountOptions)
+
+		-- Recheck the mount
+		checkMount()
+
+		if(mountLocation ~= mountPoint) then
+			luup.task("Mount point error: ".. mountLocation.."::"..mountPoint, 2, string.format("%s[%d]", luup.devices[dmDevice].description, dmDevice), -1)
+			luup.log(DATAMINE_LOG_NAME.."Mount point error: ".. mountLocation.."::"..mountPoint)
+			errorStatus = true
+			luup.variable_set(SERVICE_ID, "errorStatus", "true", dmDevice)
+			stateInitialised = false
+		end
+	end
+end
+
 function deferredStartup()
 	-- Remove files from old versions
 	removeOldVersion()
@@ -578,7 +595,7 @@ function loadConfigFile(filename)
 				end
 
 				if(configData.dbVersion == 1) then
---					luup.call_delay('upgradeDatabaseDeferred', 25, "")
+					luup.call_delay('upgradeDatabaseDeferred', 25, "")
 				end
 
 				for k,v in pairs (configData.Variables) do
@@ -756,12 +773,13 @@ function cleanConfigBackup()
 		return
 	end
 
+	local tOld    = os.time() - (5 * 86400)
 	local total   = 0
 	local deleted = 0
 	for k,v in pairs(files) do
 		-- Keep count of how many files we had
 		total = total + 1
-		if(k > 10) then
+		if((k > 10) and (v.time < tOld)) then
 			-- Keep count of how many files we deleted
 			deleted = deleted + 1
 			os.execute("rm '"..v.name.."'")
@@ -1059,6 +1077,7 @@ function watchVariable(dmDevice, lul_service, lul_variable, lul_value_old, lul_v
 		luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
 		luup.log(DATAMINE_LOG_NAME .. "Error: '" .. err .. "'")
 		errorStatus = true
+		luup.variable_set(SERVICE_ID, "errorStatus", "true", dmDevice)
 		errorCount = errorCount + 1
 	else
 		outf:write(os.time() .. ',' .. tostring(lul_value_new) .. '\n')
@@ -1638,7 +1657,7 @@ function controlSaveVariable(lul_parameters)
 	end
 
 	if(lul_parameters.lookup ~= nil) then
-		luup.log(DATAMINE_LOG_NAME.."Save Lookup="..lul_parameters.lookup)
+--		luup.log(DATAMINE_LOG_NAME.."Save Lookup="..lul_parameters.lookup)
 		local Lookup = json.decode(lul_parameters.lookup)
 
 		local cnt = 0
@@ -1652,7 +1671,7 @@ function controlSaveVariable(lul_parameters)
 
 		-- If there were no entries, remove the table
 		if(cnt == 0) then
-			luup.log(DATAMINE_LOG_NAME.."Save Lookup cnt=0")
+--			luup.log(DATAMINE_LOG_NAME.."Save Lookup cnt=0")
 			configData.Variables[foundId].Lookup = nil
 		end
 	else
@@ -1681,6 +1700,15 @@ function controlSaveVariable(lul_parameters)
 	cmd = "mkdir "..dataDir.."database/" .. configData.Variables[foundId].Id .. "/raw/"
 	os.execute(cmd)
 
+	-- Save the configuration separately - to aid disaster recovery (!!)
+	local fname = dataDir.."database/" .. configData.Variables[foundId].Id .. "/config.json"
+	local outf = io.open(fname, 'w')
+	if(outf == nil) then
+		luup.log(DATAMINE_LOG_NAME .. "ERROR: Unable to open variable congig file for write " .. fname)
+	else
+		outf:write(json.encode(configData.Variables[foundId]) .. '\n')
+		outf:close()
+	end
 
 	-- Save the configuration if it's changed
 	if(configChanged == true) then
@@ -2133,7 +2161,7 @@ workHistory = false		-- REMOVE THIS
 
 	-- Log sunrise / sunset times
 	if(luup.is_night() ~= dayNightState) then
-	luup.log(DATAMINE_LOG_NAME.."Sun EVENT!!!")
+--	luup.log(DATAMINE_LOG_NAME.."Sun EVENT!!!")
 		-- Remember the last event - for status update
 		dayNightLast = dayNightEvent
 
@@ -2143,6 +2171,7 @@ workHistory = false		-- REMOVE THIS
 			luup.log(DATAMINE_LOG_NAME .. "Unable to open file for write " .. logfile)
 			luup.log(DATAMINE_LOG_NAME .. "Error: '" .. err .. "'")
 			errorStatus = true
+			luup.variable_set(SERVICE_ID, "errorStatus", "true", dmDevice)
 			errorCount = errorCount + 1
 		else
 			outf:write('{"time":' .. dayNightEvent .. ',"night":' .. tostring(luup.is_night()) .. '},\n')
@@ -2230,6 +2259,10 @@ function doEvents()
 	local newWeek
 	local WeekNum
 	local outf
+
+	if(eventsEnabled == 0) then
+		return false
+	end
 
 --luup.log(DATAMINE_LOG_NAME.."Events = "..configData.Events.last)
 
@@ -2467,6 +2500,15 @@ function upgradeDatabaseDeferred()
 
 			WeekNum = FIRSTLOG_RAW
 			repeat
+				if(WeekNum >= 2259) then
+					cmd = dataDir .. "database/"..v.Id.."/raw/"..WeekNum..".txt"
+					local fp = io.open(cmd,"r")
+					if(fp ~= nil) then
+						io.close(fp)
+						break
+					end
+				end
+
 				cmd = "cp '" .. dataDir .. v.Archive .. " [R"..WeekNum.."].txt' " .. dataDir .. "database/"..v.Id.."/raw/"..WeekNum..".txt"
 				os.execute(cmd)
 

@@ -213,6 +213,64 @@
             "TabType":"javascript",
             "ScriptName":"shared.js",
             "Function":"advanced_device"
+        },
+        {
+            "Label": {
+                "lang_tag": "notifications",
+                "text": "Notifications"
+            },
+            "Position": "2",
+            "TabType": "javascript",
+            "ScriptName": "shared.js",
+            "Function": "device_notifications"
+        }
+    ],
+    "eventList2": [
+        {
+            "id": 1,
+            "label": {
+                "lang_tag": "datamine_error",
+                "text": "dataMine Error State"
+            },
+            "serviceId": "urn:cd-jackson-com:serviceId:DataMine1",
+
+            "norepeat": "1",
+            "argumentList": [
+                {
+                    "id": 1,
+                    "dataType": "string",
+                    "name": "errorStatus",
+                    "comparisson": "=",
+                    "allowedValueList": [
+                        {
+                            "value": "true",
+                            "HumanFriendlyText": {
+                                "lang_tag": "hft_true",
+                                "text": "True"
+                            }
+                        },
+                        {
+                            "value": "false",
+                            "HumanFriendlyText": {
+                                "lang_tag": "hft_false",
+                                "text": "False"
+                            }
+                        }
+                    ],
+                    "prefix": {
+                        "lang_tag": "error",
+                        "text": "Error"
+                    },
+                    "suffix": {
+                        "lang_tag": "-",
+                        "text": "-"
+                    },
+                    "HumanFriendlyText": {
+                        "lang_tag": "hft_error",
+                        "text": "dataMine error state (_ARGUMENT_VALUE_)"
+                    }
+                }
+            ]
         }
     ],
     "DeviceType":"urn:schemas-cd-jackson-com:device:DataMine:1"

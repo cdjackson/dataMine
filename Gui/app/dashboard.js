@@ -20,33 +20,23 @@ Ext.define('DataMine.dashboard', {
                     items:[
                         {
                             title:'Energy Overview',
-                            tabTip:'Dashboard tabtip',
+//                            tabTip:'Dashboard tabtip',
                             border:false,
                             xtype: 'dmDashEnergyOverview'
                         }
-                        /*,
-                        {
-                            title:'Dashboard',
-                            tabTip:'Dashboard tabtip',
-                            border:false,
-                            items:[
-
-                            ]
-                        }*/
                     ]
-                }
-                /*,
+                },
                 {
-                    expanded:true,
-                    icon:'images/save.png',
+                    mainItem:0,
                     items:[
                         {
-                            title:'Configuration',
-                            tabTip:'Configuration tabtip',
-                            style:'padding: 10px;'
+                            title:'Notifications',
+//                            tabTip:'Dashboard tabtip',
+                            border:false,
+                            xtype: 'dmDashNotifications'
                         }
                     ]
-                }*/
+                }
             ]
         }
     ],

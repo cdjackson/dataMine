@@ -94,12 +94,13 @@ var lastLoadTime;
 
 var reloadTime = 0;
 
-var guiVersion = '0.978';
+var guiVersion = '0.980';
 var luaVersion;
 var veraUnits;
 var veraServer = "";
 var veraNotifications;
 var veraNotificationsLast;
+var notificationStore;
 var veraDayNight;
 var veraDayNightLast;
 
@@ -684,6 +685,9 @@ function getEvents() {
                     veraNotifications.Events.push(res.Events[listCnt]);
                 }
             }
+            notificationStore.loadData(veraNotifications.Events);
+            notificationStore.sort('timestamp', 'DESC');
+
 //            veraNotifications = res;
         },
         failure:function (response, opts) {
@@ -881,6 +885,7 @@ function doUSBConfig() {
 
 function createUI() {
 //  Ext.QuickTips.init();
+    delete Ext.tip.Tip.prototype.minWidth;
 
     // Get the notifications/events from Vera
 //    getEvents();
@@ -937,11 +942,27 @@ function createUI() {
         //idProperty:'channels'
     });
 
+    Ext.define('NotificationList', {
+        extend:'Ext.data.Model',
+        fields:[
+            {name:'description'},
+            {name:'type'},
+            {name:'id'},
+            {name:'timestamp'},
+            {name:'value'},
+            {name:'device'}
+        ]
+    });
+
+    // create the data store
+    notificationStore = Ext.create('Ext.data.ArrayStore', {
+        model:'NotificationList'
+    });
+
 
     // create the data store
     graphStore = Ext.create('Ext.data.ArrayStore', {
-        model:'GraphList'//,
-//        data: configChan.list
+        model:'GraphList'
     });
 
     // Check to see if there are no null in the array!!

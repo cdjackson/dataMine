@@ -16,6 +16,7 @@ var eventDisplay = EVT_NONE;
 var eventAxis = -1;
 
 var nightsDisplay = false;
+var MaxDayNight = 1728020;
 
 var graphInfoItems;
 
@@ -591,7 +592,7 @@ function updateChart(channels, start, stop, newChart) {
 //                if (chartObject)
 //                    chartObject.hideLoading();
 
-                if(nightsDisplay)
+                if(nightsDisplay && ((json.max - json.min) < MaxDayNight))
                     addNights(parms.start, parms.stop);
                 else
                     options.xAxis.plotBands = null;
@@ -667,7 +668,7 @@ function redrawChart() {
         options.series.splice(eventAxis, 1);
     }
 
-    if(nightsDisplay)
+    if(nightsDisplay & ((ChartMax - ChartMin) < MaxDayNight))
         addNights(chartMin, chartMax);
     else
         options.xAxis.plotBands = null;

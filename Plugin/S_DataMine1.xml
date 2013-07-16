@@ -12,6 +12,13 @@
 		<defaultValue></defaultValue>
 		<shortCode>chcnt</shortCode>
 	  </stateVariable>
+	  <stateVariable>
+		<name>errorStatus</name>
+		<sendEventsAttribute>yes</sendEventsAttribute>
+		<dataType>string</dataType>
+		<defaultValue></defaultValue>
+		<shortCode>errst</shortCode>
+	  </stateVariable>
 </serviceStateTable>
 
 <actionList>
