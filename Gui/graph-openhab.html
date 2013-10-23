@@ -1,0 +1,432 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<title>goGraph - graphing for Vera</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1"/>
+<link rel="stylesheet" type="text/css" href="dataMine.css"/>
+
+<script type="text/javascript" src="js/jquery.min.js"></script>
+<script type="text/javascript" src="js/highcharts.min.js"></script>
+
+<script type="text/javascript">
+
+chartOptions = {
+    chart:{
+        renderTo:'dataMine',
+        animation:false,
+        type:'spline'//,
+//        zoomType:'x'
+//        events:{
+//            selection:function (event) {
+//                event.preventDefault();
+//                updateChart(chartChannels, Math.floor(event.xAxis[0].min / 1000), Math.ceil(event.xAxis[0].max / 1000));
+//            },
+//            click:function (event) {
+//							event.preventDefault();
+//							updateChart(chartChannels, event.xAxis[0].min, event.xAxis[0].max);
+//            }
+//        }
+    },
+    credits:{
+        enabled:false
+    },
+    title:{
+        text:null
+    },
+    subtitle:{
+//					text: null
+    },
+    xAxis:{
+        type:'datetime',
+//					maxZoom: 4 * 3600000,	// 4 hours
+        dateTimeLabelFormats:{ // don't display the dummy year
+            month:'%e. %b',
+            year:'%b'
+        }
+    },
+    yAxis:[
+        {
+            title:{
+                text:null
+            }
+        },
+        {
+            title:{
+                text:null
+            }
+        },
+        {
+            title:{
+                text:null
+            }
+        },
+        {
+            title:{
+                text:null
+            }
+        },
+        {
+            title:{
+                text:null
+            },
+            min:-1,
+            max:0,
+            maxPadding:0,
+            minPadding:0,
+            tickLength:0,
+            labels:{
+                enabled:false
+            }
+        }
+    ],
+    plotOptions:{
+        spline:{
+            lineWidth:3,
+            states:{
+                hover:{
+                    lineWidth:5
+                }
+            },
+            marker:{
+                states:{
+                    hover:{
+                        enabled:true,
+                        symbol:'circle',
+                        radius:5,
+                        lineWidth:1
+                    }
+                }
+            }
+        },
+        series:{
+            marker:{
+                enabled:false
+            }
+        }
+    },
+    legend:{
+        enabled:true
+    },
+    tooltip:{
+        enabled:true,
+        crosshairs:true,
+        shared:false
+//					formatter: function() {
+//							return '&lt;b&gt;'+ this.series.name +'&lt;/b&gt;&lt;br/&gt;'+
+//							Highcharts.dateFormat('%e. %b', this.x) +': '+ this.y +' m';
+//					}
+    }
+};
+
+var graphName;
+var graphPeriod;
+var graphUpdate = 0;
+var configGraph;
+var configChan;
+var veraDayNight;
+var initState;
+var nightsDisplay;
+
+var initList = [
+    {variable:"configGraph", url:"/port_3480/data_request?id=lr_dmCtrl&control=listGraphs"},
+    {variable:"configChan", url:"/port_3480/data_request?id=lr_dmList"},
+    {variable:"veraDayNight", url:"/port_3480/data_request?id=lr_dmCtrl&control=sunrise"}
+];
+
+
+function getQueryString() {
+    // This function is anonymous, is executed immediately and
+    // the return value is assigned to QueryString!
+    var query_string = {};
+    var query = window.location.search.substring(1);
+    var vars = query.split("&");
+    for (var i=0;i<vars.length;i++) {
+        var pair = vars[i].split("=");
+        // If first entry with this name
+        if (typeof query_string[pair[0]] === "undefined") {
+            query_string[pair[0]] = pair[1];
+            // If second entry with this name
+        } else if (typeof query_string[pair[0]] === "string") {
+            var arr = [ query_string[pair[0]], pair[1] ];
+            query_string[pair[0]] = arr;
+            // If third or later entry with this name
+        } else {
+            query_string[pair[0]].push(pair[1]);
+        }
+    }
+    return query_string;
+}
+
+window.onload = function () {
+    var params = getQueryString();
+    graphName = params['ref'];
+    if(params['period'] != undefined)
+        graphPeriod = parseFloat(params['period']);
+    if(graphPeriod == NaN)
+        graphPeriod = undefined;
+    if(params['update'] != undefined)
+        graphUpdate = parseFloat(params['update']);
+    if(graphUpdate == NaN)
+        graphPeriod = 0;
+    initState = 0;
+    loadNextConfig();
+}
+
+function loadNextConfig() {
+    $.ajax({
+        url:initList[initState].url,
+        dataType:'json',
+        success:function (json, state, xhr) {
+            if (state == "success") {
+                window[initList[initState].variable] = json;
+                initState++;
+            }
+
+            if (initState < initList.length) {
+                loadNextConfig();
+                return;
+            }
+
+            // All configs loaded
+            if(graphUpdate == 0)
+                doGraph();
+            else
+                mainLoop();
+        },
+        error:function () {
+            loadError("Error communicating with Vera!");
+        }
+    });
+}
+
+function mainLoop()
+{
+    window.setTimeout(mainLoop, (graphUpdate * 60000))
+    doGraph();
+}
+
+function doGraph() {
+    var Total = configGraph.length;
+    for (var Cnt = 0; Cnt < Total; Cnt++) {
+        if (configGraph[Cnt].Reference == graphName) {
+            // Found the reference, load the channels
+            var channels = new Array();
+            var chTotal = configGraph[Cnt].Channels.length;
+            for (var chCnt = 0; chCnt < chTotal; chCnt++) {
+                channels[chCnt] = {};
+                if (configGraph[Cnt].Channels[chCnt].yAxis == null)
+                    channels[chCnt].axis = 0;
+                else
+                    channels[chCnt].axis = configGraph[Cnt].Channels[chCnt].yAxis - 1;
+
+                // Convert the Device:Service:Variable to the id
+                var cfTotal = configChan.length;
+                for (var cfCnt = 0; cfCnt < cfTotal; cfCnt++) {
+                    if (configChan[cfCnt].Device == configGraph[Cnt].Channels[chCnt].Device &
+                            configChan[cfCnt].Service == configGraph[Cnt].Channels[chCnt].Service &
+                            configChan[cfCnt].Variable == configGraph[Cnt].Channels[chCnt].Variable)
+                        channels[chCnt].value = configChan[cfCnt].Id;
+                }
+            }
+
+            nightsDisplay = false;
+            if (configGraph[Cnt].Night != null) {
+                if (configGraph[Cnt].Night > 0)
+                    nightsDisplay = true;
+            }
+
+            window.document.title = configGraph[Cnt].Name;
+
+            var chartMax = Math.round((new Date()).getTime() / 1000);
+            var chartMin = chartMax - 86400;
+            if(graphPeriod != undefined)
+                chartMin = chartMax - (graphPeriod * 86400);
+            else if(configGraph[Cnt].Period != null)
+                chartMin = chartMax - configGraph[Cnt].Period;
+            updateChart(channels, chartMin, chartMax, true);
+        }
+    }
+}
+
+function getDMDevice(dmId) {
+    var numDevices = configChan.length;
+    for (var iDevice = 0; iDevice < numDevices; ++iDevice) {
+        if (dmId == configChan[iDevice].Id)
+            return configChan[iDevice];
+    }
+
+    return null;
+}
+
+// Generate the day/night plotbands
+function addNights(start, stop) {
+    chartOptions.xAxis.plotBands = [];
+
+    if(veraDayNight == null)
+        return;
+
+    var newBand = null;
+
+    for (var listCnt in veraDayNight.Sunrise) {
+        if(veraDayNight.Sunrise[listCnt].time == null)
+            continue;
+        if(veraDayNight.Sunrise[listCnt].time < start)
+            continue;
+        if(veraDayNight.Sunrise[listCnt].time > stop)
+            break;
+
+        if(veraDayNight.Sunrise[listCnt].night == true) {
+            newBand = {};
+            newBand.from = veraDayNight.Sunrise[listCnt].time * 1000;
+        }
+        else {
+            // If we've started in darkness, then start the band
+            if(newBand == null) {
+                newBand = {};
+                newBand.from = start * 1000;
+            }
+            newBand.to = veraDayNight.Sunrise[listCnt].time * 1000;
+            newBand.color = "#eeeeee";
+            chartOptions.xAxis.plotBands.push(newBand);
+            newBand = null;
+        }
+    }
+
+    // If we've ended in darkness, then close the band
+    if(newBand != null){
+        newBand.to = stop * 1000;
+        newBand.color = "#eeeeee";
+        chartOptions.xAxis.plotBands.push(newBand);
+    }
+}
+
+function updateChart(channels, start, stop, newChart) {
+    var timeStart = (new Date()).getTime();
+    var timeInit = timeStart;
+
+    var parms = {};
+    parms.id = "lr_dmData";
+    parms.start = Math.floor(start);
+    parms.stop = Math.ceil(stop);
+
+    for (var chCnt = 0; chCnt < channels.length; chCnt++) {
+        parms["channel" + (chCnt + 1)] = channels[chCnt].value;
+    }
+
+    // Remove the categories from the yAxis
+    chartOptions.yAxis[0].categories = null;
+    chartOptions.yAxis[1].categories = null;
+    chartOptions.yAxis[2].categories = null;
+    chartOptions.yAxis[3].categories = null;
+
+    jQuery.getJSON('/port_3480/data_request?id=lr_dmData', parms, function (json, state, xhr) {
+        if (state == "success") {
+            var options = chartOptions;		// Keep a copy of the options - NOT REALLY DOING THIS!!!
+            var binaryOffset = 0;
+            var binaryAxis = 0;
+
+            options.series = [];
+
+            var cnt, tot;
+            cnt = 0;
+            tot = 0;
+
+            if (json.series) {
+                for (var s = 0; s < json.series.length; s++) {
+                    // Get the configuration data
+                    var dmDev = getDMDevice(json.series[s].Id);
+
+                    // Get the axis
+                    var yAxis = 0;
+                    for (var c = 0; c < channels.length; c++) {
+                        if (channels[c].value == dmDev.Id) {
+                            yAxis = channels[c].axis;
+                            break;
+                        }
+                    }
+
+                    for (var i = 0; i < json.series[s].data.length; i++) {
+                        json.series[s].data[i][1] += dmDev.DataOffset;
+                    }
+
+                    // If ticks are provided, add categories to the graph
+                    if (json.series[s].ticks) {
+                        chartOptions.yAxis[yAxis].categories = new Array();
+                        for (var t = 0; t < json.series[s].ticks.length; t++) {
+                            chartOptions.yAxis[yAxis].categories[json.series[s].ticks[t][1]] = json.series[s].ticks[t][0];
+                        }
+                    }
+
+                    options.series[s] = [];
+                    options.series[s].data = json.series[s].data;
+                    options.series[s].name = json.series[s].label;
+                    options.series[s].yAxis = yAxis;
+//                    options.series[s].color = '#FF0000';
+                    //options.series[s].marker = true;
+
+                    if (dmDev == null)
+                        option.series[s].type = "spline";
+                    else {
+                        switch (dmDev.Type) {
+                            case 1:
+                                options.series[s].type = "line";
+                                break;
+                            case 2:
+                                options.series[s].type = "scatter";
+//                                chartOptions.scatter.marker.enabled = true;
+                                break;
+                            case 3:
+                            case 4:
+                                options.series[s].type = "area";
+                                break;
+                            default:
+                                options.series[s].type = "spline";
+                                break;
+                        }
+                    }
+                }
+
+                if (nightsDisplay)
+                    addNights(parms.start, parms.stop);
+                else
+                    options.xAxis.plotBands = null;
+
+                $("#splashscreen").fadeOut(10);
+                $("#dataMine").fadeIn(10);
+
+                var h1 = $('#dataMine').innerHeight();
+                var h2 = $('#dataMine').outerHeight();
+                h1 = $(window).height() - 30;
+                var w1 = $(window).width() - 30;
+                options.chart.height = h1;
+                options.chart.width = w1;
+
+                chartObject = new Highcharts.Chart(options);
+            }
+        }
+
+    })
+
+}
+
+
+</script>
+</head>
+<body>
+<div id="dataMine" style="width:100%;height:100%">
+</div>
+<div id="splashscreen" class="splashscreen">
+    <div style="display:block;position:absolute;width:99%;top:40%; text-align: center;">
+        <p id="loadingSpinner"><img src="images/loading.gif" alt="Loading..."/></p>
+    </div>
+    <div style="display:block;position:absolute;width:99%;top:45%; text-align: center;">
+        <p id="startWarning" style="display:none;font-family:Verdana,Helvetica,sans-serif;font-size: 10px;">
+            <span><img style="margin-top:-4px;" src="images/exclamation.png" alt="Error..."/></span><span
+                id="warningText" style="margin-left: 4px; vertical-align: top;"></span>
+        </p>
+    </div>
+</div>
+</body>
+</html>
+

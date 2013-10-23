@@ -8,7 +8,7 @@ SERVICE_ID = "urn:cd-jackson-com:serviceId:DataMine1"
 local jsonLib = "json-dm"
 local tmpFilename = "/tmp/dataMine.tmp"
 
-local dmLuaVersion = "0.980"
+local dmLuaVersion = "0.981.2"
 
 local mountLocal = ""
 
@@ -233,6 +233,10 @@ serviceTypeArray[13].Service  = WXWINDCOND_SERVICE
 serviceTypeArray[13].Variable = WXWINDCOND_VARIABLE
 serviceTypeArray[13].Type     = DATATYPE_WEATHER
 
+local RestartMax
+local RestartCnt
+local RestartTime
+
 local dmDevice
 
 -- Run once at Luup engine startup.
@@ -318,6 +322,30 @@ function initialise(lul_device)
 		historyEnabled = 0
 --	end
 
+	-- Get the restart count
+	RestartCnt = luup.variable_get(SERVICE_ID, "RestartCnt", dmDevice)
+	if(RestartCnt== nil) then
+		RestartCnt = 0
+		luup.variable_set(SERVICE_ID, "RestartCnt", 0, dmDevice)
+	end
+	RestartCnt = tonumber(RestartCnt)
+
+	-- Get the restart count
+	RestartMax = luup.variable_get(SERVICE_ID, "RestartMax", dmDevice)
+	if(RestartMax== nil) then
+		RestartCnt = 0
+		luup.variable_set(SERVICE_ID, "RestartMax", 0, dmDevice)
+	end
+	RestartMax = tonumber(RestartMax)
+
+	-- Get the restart count
+	RestartTime = luup.variable_get(SERVICE_ID, "RestartTime", dmDevice)
+	if(RestartTime== nil) then
+		RestartTime = 0
+		luup.variable_set(SERVICE_ID, "RestartTime", 300, dmDevice)
+	end
+	RestartTime = tonumber(RestartTime)
+
 	-- Is auto backup revert enabled?
 	loadBackup = luup.variable_get(SERVICE_ID, "SetUseBackup", dmDevice)
 	if(loadBackup == nil) then
@@ -356,6 +384,17 @@ function initialise(lul_device)
 		stateInitialised = false
 	else
 		doMount()
+
+		if(mountLocation == mountPoint) then
+			-- Mount was ok - reset the counter
+			luup.variable_set(SERVICE_ID, "RestartCnt", 0, dmDevice)
+		else
+			-- If the mount has failed, and we allow remounting, then set the timer
+			if(RestartCnt < RestartMax) then
+				luup.log(DATAMINE_LOG_NAME.."Starting retryMount timer")
+				luup.call_delay('retryMount', RestartTime, "")
+			end
+		end
 	end
 
 	-- Create the database directory
@@ -424,9 +463,6 @@ function initialise(lul_device)
 				end
 			end
 		end
-
-		-- Retreive the Vera system information data
---		getSysInfo()
 
 		-- Prepare the worker "thread"
 		historyNextHour = (math.floor(os.time() / 3600) + 1) * 3600
@@ -536,6 +572,28 @@ function deferredStartup()
 
 	-- Check available memory
 	checkFreeSpace()
+end
+
+function retryMount()
+	luup.log(DATAMINE_LOG_NAME.."Retry Mounting.")
+
+	RestartCnt = RestartCnt + 1
+	doMount()
+
+	-- If the mount is correct, then restart
+	if(mountLocation == mountPoint) then
+		luup.log(DATAMINE_LOG_NAME.."Mount point found after ".. RestartCnt .. " tries.")
+
+		luup.variable_set(SERVICE_ID, "RestartCnt", RestartCnt, dmDevice)
+		luup.call_action("urn:micasaverde-com:serviceId:HomeAutomationGateway1", "Reload", {}, 0)
+	else
+		luup.log(DATAMINE_LOG_NAME.."Mount point NOT found after ".. RestartCnt .. " tries.")
+
+		if(RestartCnt < RestartMax) then
+			luup.call_delay('retryMount', RestartTime, "")
+		end
+	end
+
 end
 
 -- Removes files from previous versions of GUI
@@ -1682,11 +1740,11 @@ function controlSaveVariable(lul_parameters)
 	-- Enable the watch callback if logging is enabled
 	if(configData.Variables[foundId].Logging == 1) then
 		-- Enable logging if it hasn't previously been enabled
-		if(stateLogging[foundId] == nil) then
-			stateLogging[foundId] = 0
+		if(stateLogging[configData.Variables[foundId].Id] == nil) then
+			stateLogging[configData.Variables[foundId].Id] = 0
 		end
-		if(stateLogging[foundId] == 0) then
-			stateLogging[foundId] = 1
+		if(stateLogging[configData.Variables[foundId].Id] == 0) then
+			stateLogging[configData.Variables[foundId].Id] = 1
 
 			luup.variable_watch('watchVariable', configData.Variables[foundId].Service, configData.Variables[foundId].Variable, tonumber(configData.Variables[foundId].Device))
 			luup.log(DATAMINE_LOG_NAME.."Watching: D["..tonumber(device).."] S["..service.."] V["..variable.."]")
